@@ -318,7 +318,17 @@ if( -e $dataFile )
   print OUT $json->encode($newScreenData);
   close OUT;
 
-  unless( $newScreenData->{'density'}->{'complete'} )
+  ######## FCH testing here
+  my $FCH = 0;
+  if( exists $commonOceanData->{'screen'}->{'method'} ) {
+    if( $commonOceanData->{'screen'}->{'method'} =~ m/fch/i ) {
+      $FCH = 1;
+      print " NOTE: FCH requested, will skip density, model, screen, and combine sections\n";
+    }
+  }
+  ########
+
+  unless( $newScreenData->{'density'}->{'complete'} || $FCH == 1 )
   {
     my $t0 = [gettimeofday];
     my $errorCode = runDensityAverage( $newScreenData );
@@ -335,7 +345,7 @@ if( -e $dataFile )
   print OUT $json->encode($newScreenData);
   close OUT;
 
-  unless( $newScreenData->{'model'}->{'complete'} )
+  unless( $newScreenData->{'model'}->{'complete'} || $FCH == 1 )
   {
     my $t0 = [gettimeofday];
 #    print "MODEL: " . $newScreenData->{'model'}->{'complete'} . "\n";
@@ -354,7 +364,7 @@ if( -e $dataFile )
   close OUT;
 
 
-  unless( $newScreenData->{'screen'}->{'complete'} )
+  unless( $newScreenData->{'screen'}->{'complete'} || $FCH == 1 )
   {
     my $t0 = [gettimeofday];
     print "SCREEN\n";
@@ -382,7 +392,7 @@ if( -e $dataFile )
     close OUT;
   }
 
-  unless( $newScreenData->{'combine'}->{'complete'} )
+  unless( $newScreenData->{'combine'}->{'complete'} || $FCH == 1 )
   {
     my $t0 = [gettimeofday];
     print "COMBINE\n";

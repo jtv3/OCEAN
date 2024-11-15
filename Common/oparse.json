@@ -312,6 +312,7 @@
          0.25,
          0.375
       ],
+      "method" : "rpa",
       "mode" : "core",
       "model" : {
          "SLL" : {
