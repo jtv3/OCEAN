@@ -324,6 +324,7 @@ if( -e $dataFile )
     if( $commonOceanData->{'screen'}->{'method'} =~ m/fch/i ) {
       $FCH = 1;
       print " NOTE: FCH requested, will skip density, model, screen, and combine sections\n";
+      print "       Will force new offset calculation\n";
     }
   }
   ########
@@ -409,7 +410,8 @@ if( -e $dataFile )
 
   }
 
-  unless( $newScreenData->{'offset'}->{'complete'} )
+  # For now force new offset calculation if FCH is set
+  unless( $newScreenData->{'offset'}->{'complete'} && $FCH == 0 )
   {
     my $t0 = [gettimeofday];
     print "OFFSET\n";
