@@ -1,6 +1,13 @@
 use strict;
 
-die "Usage [PSP] [Core hole] [Strength]\n" if( scalar @ARGV <3 );
+#die "Usage [PSP] [Core hole] [Strength]\n" if( scalar @ARGV <3 );
+if( scalar @ARGV < 3 ) {
+  print "Usage [PSP] [Core hole] [Strength]\n" .
+        " For example:   [PSP] = C.UPF\n" .
+        "                [Core hole] = vc_barez006n01l00\n" .
+        "                [Strength] = 0.01 (for 1%)\n";
+  die;
+}
 my $pspIn = $ARGV[0];
 my $coreHole = $ARGV[1];
 my $strength = $ARGV[2];
@@ -23,7 +30,7 @@ my @CHPot;
 my @CHRad;
 
 while( my $line = <CH> ) {
-  $line =~ m/(\S+)\s+(\S+)/ or die "Bas line in $coreHole\n";
+  $line =~ m/(\S+)\s+(\S+)/ or die "Bad line in $coreHole\n";
   push @CHRad, $1;
   push @CHPot, $2*$strength*2.0;  # Ha to Ryd
 }
