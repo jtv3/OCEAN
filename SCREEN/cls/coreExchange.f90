@@ -77,13 +77,20 @@ program coreExchange
 !  enddo
 !  close(99)
 
-  open(unit=98,file='cls.inp',form='formatted',status='old')
-  read(98,*) nsite
 
   write(6,'(A2,A5,X,A14,A14,A14)') '##', 'site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
-  ! just do site 1 hard-wired
+  ! 
+  !
+  open(unit=99,file='edgelist',form='formatted',status='old')
+  read(99,*) ZZ, nc, lc
+  close(99)
+
+!  open(unit=98,file='cls.inp',form='formatted',status='old')
+  open(unit=98,file='sitelist',form='formatted',status='old') 
+  read(98,*) nsite
   do isite = 1,nsite
-    read(98,*) el, iisite, ZZ, nc, lc
+    read(98,*) el, ZZ, iisite
+!    read(98,*) el, iisite, ZZ, nc, lc
 
     write(str,'(A8,I3.3)') 'prjfilez', ZZ
     write(add10, '(A1,I3.3,A1,I2.2,A1,I2.2)') 'z', ZZ, 'n', nc, 'l', lc
