@@ -52,7 +52,7 @@ program coreExchange
   read(99,*) kmesh(:)
   close(99)
   nk = product(kmesh)
-  write(6,*) nk
+!  write(6,*) nk
 
   open(unit=99,file='avecsinbohr.ipt',form='formatted',status='old')
   read(99,*) avecs(:,:)
@@ -80,6 +80,7 @@ program coreExchange
   open(unit=98,file='cls.inp',form='formatted',status='old')
   read(98,*) nsite
 
+  write(6,'(A2,A5,X,A14,A14,A14)') '##', 'site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
   ! just do site 1 hard-wired
   do isite = 1,nsite
     read(98,*) el, iisite, ZZ, nc, lc
@@ -160,12 +161,11 @@ program coreExchange
   do i = 1, ntot
     do j = 1, nptot
       do k = 1, nptot
-        f3 = f3 + dmat(k,j) * cks(k,i,1) * conjg(cks(j,i,1))
+        ! Exchange has a minus sign
+        f3 = f3 - dmat(k,j) * cks(k,i,1) * conjg(cks(j,i,1))
       enddo
     enddo
   enddo
-  write(6,'(A2,1X,I4.4,1X,E14.6,E14.6)') el, iisite, real(f3)/real(nk,DP)/omega, &
-                                                       aimag(f3)/real(nk,DP)/omega
 
   allocate(denMat(nptot, nptot) )
   denMat(:,:) = 0.0_DP
@@ -178,7 +178,9 @@ program coreExchange
       su = su+ cks(j,i,1) * conjg(cks(j,i,1)) / real(nk,DP) / omega
     enddo
   enddo
-  write(6,*) 'Local den matrix trace', su
+!  write(6,*) 'Local den matrix trace', su
+  write(6,'(A2,1X,I4.4,1X,E14.6,E14.6,E14.6)') el, iisite, real(f3)/real(nk,DP)/omega, &
+                                                       aimag(f3)/real(nk,DP)/omega, su
 
 !  do j = 1, 5
 !    write(6,*) denMat(1:5,j)
