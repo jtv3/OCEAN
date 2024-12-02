@@ -107,6 +107,8 @@ program coreExchange
   dmat = 0.0_DP
   ip = 0
   jp = 0
+!  lmax = 0
+!  lmin = 0
   do l = lmin, lmax
     kgl = abs(l-lc)
     kgh = l+lc
@@ -115,6 +117,7 @@ program coreExchange
       gk = 0.0_DP
       do k = kgl, kgh, 2
         write(str, '(1a2,3i1,1a10)' ) 'gk', lc, l, k, add10
+!        write(6,*) str
         open( unit=99, file=str, form='formatted', status='old' )
         rewind 99
         read ( 99, * ) gk( :, :, k )
@@ -122,19 +125,21 @@ program coreExchange
       enddo
       l1 = lc; m1 = 0
       l2 = l
-      l3 = lc; m3 =0
-      l4 = l
-      mk = m1 - m3
+      l3 = l
+      l4 = lc; m4 =0
       do m2 = -l, l
         do nu2 = 1, nproj(l)
           jp = jp + 1
-          do m4 = -l, l
-            istart = ip + (m4+l+1)
+          do m3 = -l, l
+            mk = m1 - m3
+            istart = ip + (m3+l+1)
             if ( m1 + m2 .eq. m3 + m4 ) then
               do k = kgl, kgh, 2
                 if ( abs( mk ) .le. k ) then
                   call threey( l1, m1, k, mk, l3, m3, no, npt, x, w, yp, f1 )
                   call threey( l2, m2, k, mk, l4, m4, yes, npt, x, w, yp, f2 )
+!                  write(6,*) l1, m1, k, mk, l3, m3, f1
+!                  write(6,*) l2, m2, k, mk, l4, m4, f2
                   do nu4 = 1, nproj(l)
                     dmat(istart + nu4,jp) = gk(nu2,nu4,k) * f1 * f2 * ( 4 * pi / ( 2 * k + 1 ) )
                   enddo
