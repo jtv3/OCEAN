@@ -18,9 +18,9 @@ program coreExchange
   integer :: i, j, nu2, nu4, kmesh(3), nk, isite, iisite, nsite
   integer, allocatable :: nproj(:)
   real(DP) :: dumr, pi, su, yp( 0 : 1000 ), avecs(3,3), omega
-  real(DP), allocatable :: x(:), w(:), dmat(:,:), gk(:,:,:)
+  real(DP), allocatable :: x(:), w(:), gk(:,:,:)
   complex(DP) :: f1, f2, f3
-  complex(DP), allocatable :: cks(:,:,:), denMat(:,:)
+  complex(DP), allocatable :: cks(:,:,:), denMat(:,:), dmat(:,:)
   logical, parameter :: yes = .true.
   logical, parameter :: no = .false.
   character(len=24) :: str
@@ -107,6 +107,7 @@ program coreExchange
   write(str,'(A8,A2,I4.4)') 'parcksv.', el, iisite
   open(unit=99,file=str,form='unformatted',access='stream',status='old')
   read(99) nptot, ntot, nspin
+!  write(6,*) nptot, ntot, nspin
   allocate(cks(nptot, ntot, nspin) )
   read(99) cks
   close(99)
@@ -140,7 +141,7 @@ program coreExchange
           jp = jp + 1
           do m3 = -l, l
             mk = m1 - m3
-            istart = ip + (m3+l+1)
+            istart = ip + (m3+l)
             if ( m1 + m2 .eq. m3 + m4 ) then
               do k = kgl, kgh, 2
                 if ( abs( mk ) .le. k ) then
@@ -149,7 +150,8 @@ program coreExchange
 !                  write(6,*) l1, m1, k, mk, l3, m3, f1
 !                  write(6,*) l2, m2, k, mk, l4, m4, f2
                   do nu4 = 1, nproj(l)
-                    dmat(istart + nu4,jp) = gk(nu2,nu4,k) * f1 * f2 * ( 4 * pi / ( 2 * k + 1 ) )
+                    dmat(istart + nu4,jp) = dmat(istart + nu4,jp) &
+                                          + gk(nu2,nu4,k) * f1 * f2 * ( 4 * pi / ( 2 * k + 1 ) )
                   enddo
                 endif
               enddo
@@ -182,15 +184,15 @@ program coreExchange
       do k = 1, nptot
         denMat(k,j) = denMat(k,j) + cks(k,i,1) * conjg(cks(j,i,1)) / real(nk,DP)
       enddo
-      su = su+ cks(j,i,1) * conjg(cks(j,i,1)) / real(nk,DP) / omega
+      su = su+ (cks(j,i,1) * conjg(cks(j,i,1))) / real(nk,DP) / omega
     enddo
   enddo
 !  write(6,*) 'Local den matrix trace', su
-  write(6,'(A2,1X,I4.4,1X,E14.6,E14.6,E14.6)') el, iisite, real(f3)/real(nk,DP)/omega, &
+  write(6,'(A2,1X,I4.4,1X,F14.6,E14.6,F14.6)') el, iisite, real(f3)/real(nk,DP)/omega, &
                                                        aimag(f3)/real(nk,DP)/omega, su
 
 !  do j = 1, 5
-!    write(6,*) denMat(1:5,j)
+!    write(6,*) real(denMat(1:3,j))
 !  enddo
 
   deallocate( dmat, cks, nproj, denMat )
