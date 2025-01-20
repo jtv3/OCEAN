@@ -203,10 +203,12 @@ my $calc = lc($1);
 close CALC;
 my $run_opf;
 my $run_screen;
+my $run_cls = 1;
 if( $calc =~ m/val/i )
 {
   $run_opf = 0;
   $run_screen = 1;
+  $run_cls = 0;
 }
 else
 {
@@ -302,6 +304,17 @@ if( $run_screen)
   {
     system("$OCEAN_BIN/screen.pl") == 0 or die "SCREEN stage failed\n$!";
   }
+}
+##########################################
+#
+# CLS stage
+##########################################
+print "$Separator\n";
+if( $run_cls)
+{
+  print "Entering CLS stage\n";
+  chdir "../CLS";
+  system("$OCEAN_BIN/cls.pl") == 0 or die "CLS stage failed\n$!";
 }
 ##########################################
 #

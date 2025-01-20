@@ -158,6 +158,13 @@
          0
       ]
    },
+   "cls" : {
+      "average" : false,
+      "do_exx" : false, 
+      "edge" : null,
+      "enable" : false,
+      "energy" : null
+   },
    "computer" : {
       "para_prefix" : "#",
       "ser_prefix" : "!"

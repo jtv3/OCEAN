@@ -147,7 +147,7 @@ my %decoder = (
   'work_dir' => 'nope.wordir',
   'tmp_dir' => 'dft.tmp_dir',
   'den.kshift' => 'dft.den.kshift',
-  'core_offset' => 'screen.core_offset.enable',
+  'core_offset' => 'cls.enable',
   'ham_kpoints' => 'nope.ham_kpoints',
   'nbse.niter' => 'bse.val.haydock.niter',
   'nbse.backf' => 'bse.val.backf',
@@ -479,8 +479,10 @@ foreach my $key ( keys %inputHash )
     {
       if( $value =~ m/\d/ )
       {
-        $config->{'screen'}->{'core_offset'}->{'energy'} = $value;
+        $config->{'cls'}->{'energy'} = $value;
         $value = 'true';
+      } else {
+        $config->{'cls'}->{'average'} = 'true';
       }
     }
     # end fix  

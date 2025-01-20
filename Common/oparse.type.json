@@ -124,6 +124,13 @@
       "photon_out" : "ai",
       "photon_q" : "af"
    },
+   "cls" : {
+      "average" : "b",
+      "do_exx" : "b",
+      "edge" : "h",
+      "enable" : "b",
+      "energy" :"af" 
+   },
    "computer" : {
       "para_prefix" : "S",
       "ser_prefix" : "S"

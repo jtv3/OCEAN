@@ -114,19 +114,110 @@ if( open( my $in, "<", $dataFile ))
 #### 
 # Two components of CLS, W and V_X
 
-if( $commonOceanData->{'cls'}->{'W'} ) {
+if( $commonOceanData->{'cls'}->{'enable'} ) {
   runVOffset(  $commonOceanData, $dftData, $clsData);
   runWOffset(  $commonOceanData, $screenData, $clsData);
+  runVWSum( $commonOceanData, $clsData);
 }
-else  {
-  runVOffset(  $commonOceanData, $dftData, $clsData);
-  runWOffset(  $commonOceanData, $screenData, $clsData);
-}
+#else  {
+#  runVOffset(  $commonOceanData, $dftData, $clsData);
+#  runWOffset(  $commonOceanData, $screenData, $clsData);
+#}
 
 
 exit 0;
 ################
 ################
+
+sub runVWSum
+{
+  my ( $cod, $cls ) = @_;
+
+  my %ZNL;
+  foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
+    my ($i, $n, $l) = split ' ', $site;
+    my $z = $cod->{'structure'}->{'znucl'}[$cod->{'structure'}->{'typat'}[$i-1]-1];
+    my $znl = sprintf "%2s%1i%01i", $z, $n, $l;
+    $ZNL{ $znl } = 0;
+  }
+
+  
+  # In the future, should support setting energies for several edges in the 
+  # OCEAN input file, but this is not yet done
+  unless( $cod->{'cls'}->{'average'} ) {
+    foreach my $znl (keys %ZNL ) {
+      $ZNL{ $znl } = $cod->{'cls'}->{'energy'};
+    }
+  }
+
+  my @shells;
+  foreach my $r (@{$cod->{'screen'}->{'shells'}}) {
+    my $rad = sprintf "%03.2f", $r;
+    push @shells, $rad;
+  }
+
+  open OUT, ">", "core_shift.log" or die "Failed to open core_shift.log\n$!";
+
+  my $Ry2eV = 13.605698066;
+  my @ibe = indxByElement( $cod );
+  foreach my $rad (@shells) {
+    print OUT "Site index    New potential   new1/2 Screening   core_offset       total offset\n";
+    print OUT "                  (eV)             (eV)              (eV)              (eV)\n";
+    my %avg;
+    my %count;
+    foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
+      my ($i, $n, $l) = split ' ', $site;
+      my ($el, $j ) = split ' ', $ibe[$i-1];
+      my $z = $cod->{'structure'}->{'znucl'}[$cod->{'structure'}->{'typat'}[$i-1]-1];
+      my $znl = sprintf "%2s%1i%01i", $z, $n, $l;
+      my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+      
+      my $V = $cls->{'V'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
+      my $EXX = 0;
+      if( $cod->{'do_exx'} ) {
+        $EXX = $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
+      }
+      my $W = $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad};
+      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} = ($V + $W + $EXX)*$Ry2eV;
+#      print "$el $j $nl pot $rad $W\n";
+      
+      if( $cod->{'cls'}->{'average'} ) {
+        $count{ $znl } += 1;
+        $avg{ $znl } += $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} ;
+#        printf "%i %f\n", $count{ $znl }, $avg{ $znl };
+      }
+    }
+
+#    if( $cod->{'cls'}->{'average'} ) {
+    foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
+      my ($i, $n, $l) = split ' ', $site;
+      my ($el, $j ) = split ' ', $ibe[$i-1];
+      my $z = $cod->{'structure'}->{'znucl'}[$cod->{'structure'}->{'typat'}[$i-1]-1];
+      my $znl = sprintf "%2s%1i%01i", $z, $n, $l;
+      my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+      if( $cod->{'cls'}->{'average'} ) {
+#        $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} -= ($avg{ $znl }/$count{ $znl });
+        $ZNL{ $znl } = ($avg{ $znl })/($count{ $znl });
+#        printf "%f %f %i\n", $ZNL{ $znl }, $avg{ $znl }, $count{ $znl };
+      }
+      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} -= $ZNL{ $znl };
+      printf OUT  "   %7i   %16.9f  %15.9f  %15.9f  %16.7f\n", $j, 
+                  $cls->{'V'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'}*$Ry2eV, 
+                  $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad}*$Ry2eV,
+                  $ZNL{ $znl }, $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad};
+                  
+    }
+#    }
+  }
+  close OUT;
+
+  $cls->{'total'}->{'units'} = 'eV';
+
+  my $jsonFile = "cls.json";
+  open OUT, ">", $jsonFile or die "$!";
+  print OUT $json->encode( $cls );
+  close OUT;
+}
 
 # 
 sub runVOffset
@@ -139,6 +230,7 @@ sub runVOffset
   $cls->{'V'} = {} unless exists $cls->{'V'};
   $cls->{'V'}->{'site'} = {} unless exists $cls->{'V'}->{'site'};
   $cls->{'V'}->{'edge'} = {} unless exists $cls->{'V'}->{'edge'};
+  $cls->{'V'}->{'units'} = "Ryd.";
 
 
   my @ibe = indxByElement( $cod );
@@ -153,7 +245,7 @@ sub runVOffset
   # List of sites (ignores edge)
   my %uniqueAtomicSite;
   foreach my $edge (@{$cod->{'calc'}->{'edges'}}) {
-    print "$edge \n";
+#    print "$edge \n";
     my $s = (split ' ', $edge )[0];
     $uniqueAtomicSite{ $s } = 1;  # First element of the string
 #    $uniqueAtomicSite{ @{ split ' ', $edge }[0] } = 1;  # First element of the string
@@ -166,11 +258,11 @@ sub runVOffset
     if( exists $cls->{'V'}->{'site'}->{$el}->{$i} ) {
       unless( $dft->{'scf'}->{'hash'} eq $cls->{'V'}->{'site'}->{$el}->{$i}->{'SCF hash'} ) {
         push @runVtot, $site;
-        print "$site 0 \n";
+#        print "$site 0 \n";
       }
     } else {
       push @runVtot, $site;
-        print "$site 1 \n";
+#        print "$site 1 \n";
     }
   }
 
@@ -297,6 +389,7 @@ sub runWOffset
   print "W offset\n";
 
   $cls->{'W'} = {} unless exists $cls->{'W'};
+  $cls->{'W'}->{'units'} = "Ryd.";
 
   my @ibe = indxByElement( $cod );
 
@@ -458,7 +551,7 @@ sub projectVtot
 
   my @V;
   foreach my $edge ( @edges ) {
-    print "$edge \n";
+#    print "$edge \n";
 
     my @hfin = split ' ', $edge;
     my $cf = sprintf "coreorbz%03in%02il%02i", $hfin[1], $hfin[2], $hfin[3];
@@ -491,7 +584,7 @@ sub projectVtot
       $sum += $rad[$i] * $rad[$i] * $rad[$i] * $xr1 * $wvfn[$i]**2;
       $sum2 += $rad[$i] * $xr1 * $wvfn[$i]**2;
     }
-    print "$sum2\n";
+#    print "$sum2\n";
 
     my $filename = catfile( "pot", sprintf("avg%2s%04i", $hfin[0], $hfin[4]) );
     open IN, $filename or die "Failed to open $filename\n$!";
