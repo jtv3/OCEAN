@@ -35,7 +35,7 @@ if (! $ENV{"OCEAN_BIN"} ) {
 if (! $ENV{"OCEAN_WORKDIR"}){ $ENV{"OCEAN_WORKDIR"} = `pwd` . "../" ; }
 ###########################
 
-my @timeSections = ( 'density', 'model', 'screen', 'combine', 'offset' );
+my @timeSections = ( 'density', 'model', 'screen', 'combine' );
 
 
 my $dataFile = catfile( updir(), "Common", "postDefaultsOceanDatafile" );
@@ -218,7 +218,7 @@ if( -e $dataFile )
     unless( exists $screenData->{'screen'}->{'complete'} && $screenData->{'screen'}->{'complete'} );
 
   my @screenList = ( "all_augment", "augment", "convertstyle", "grid", "inversionstyle", "kmesh", 
-                     "kshift", "mode", "nbands", "shells", "final", "core_offset" );
+                     "kshift", "mode", "nbands", "shells", "final" );
   copyAndCompare( $newScreenData->{'screen'}, $commonOceanData->{'screen'}, $screenData->{'screen'},
                   $newScreenData->{'screen'}, \@screenList );
 
@@ -307,12 +307,12 @@ if( -e $dataFile )
 #    $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
 #  }
 
-  $newScreenData->{'offset'} = {} unless ( exists $newScreenData->{'offset'} );
-  $newScreenData->{'offset'}->{'complete'} = JSON::PP::true;
-  unless( $newScreenData->{'density'}->{'complete'} && $newScreenData->{'screen'}->{'complete'} 
-        && exists $screenData->{'offset'}->{'complete'} && $screenData->{'offset'}->{'complete'} ) {
-    $newScreenData->{'offset'}->{'complete'} = JSON::PP::false;
-  }
+#  $newScreenData->{'offset'} = {} unless ( exists $newScreenData->{'offset'} );
+#  $newScreenData->{'offset'}->{'complete'} = JSON::PP::true;
+#  unless( $newScreenData->{'density'}->{'complete'} && $newScreenData->{'screen'}->{'complete'} 
+#        && exists $screenData->{'offset'}->{'complete'} && $screenData->{'offset'}->{'complete'} ) {
+#    $newScreenData->{'offset'}->{'complete'} = JSON::PP::false;
+#  }
 
   open OUT, ">", "screen.json" or die;
   print OUT $json->encode($newScreenData);
@@ -399,20 +399,22 @@ if( -e $dataFile )
 
   }
 
-  unless( $newScreenData->{'offset'}->{'complete'} )
-  {
-    my $t0 = [gettimeofday];
-    print "OFFSET\n";
-
-    runCoreOffset( $newScreenData->{'screen'}, $newScreenData);
-
-    $newScreenData->{'offset'}->{'complete'} = JSON::PP::true;
-    $newScreenData->{'offset'}->{'time'} = tv_interval( $t0 );
-
-    open OUT, ">", "screen.json" or die;
-    print OUT $json->encode($newScreenData);
-    close OUT;
-  }
+#  if( 0 ) {
+#  unless( $newScreenData->{'offset'}->{'complete'} )
+#  {
+#    my $t0 = [gettimeofday];
+#    print "OFFSET\n";
+#
+#    runCoreOffset( $newScreenData->{'screen'}, $newScreenData);
+#
+#    $newScreenData->{'offset'}->{'complete'} = JSON::PP::true;
+#    $newScreenData->{'offset'}->{'time'} = tv_interval( $t0 );
+#
+#    open OUT, ">", "screen.json" or die;
+#    print OUT $json->encode($newScreenData);
+#    close OUT;
+#  }
+#  }
 
   foreach my $sec (@timeSections) {
     printf "Time %s: %f\n", $sec, $newScreenData->{$sec}->{'time'};

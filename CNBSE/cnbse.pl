@@ -150,6 +150,10 @@ if( $haveScreen ) {
   screenParams( $newBSEdata, $screenData, $bseData );
 }
 
+unless(  $commonOceanData->{'calc'}->{'mode'} eq 'val' ) {
+  clsParams( $newBSEdata, $commonOceanData, $bseData );
+}
+
 
 #ZNL, cks.normal, mode, nelectron, epsilon, screen.mode, conveps, haydockconv.ipt, xyz.wyck, lflag, bflag
 
@@ -331,6 +335,20 @@ sub grabScreenFiles {
 
 sub grabCoreScreenFiles {
   my ($hashRef) = @_;
+
+  my @spdf = ('s','p','d','f');
+  my $cls;
+  if( $hashRef->{'bse'}->{'cls'}->{'enable'} ) {
+    if( open my $in, "<", catfile( updir(), 'CLS', 'cls.json' ) ) {
+      local $/ = undef;
+      $cls = $json->decode(<$in>);
+      close($in);
+    } else {
+      die "Failed to open CLS/cls.json\n$!";
+    }
+  } 
+  
+    
  
   my $pawrad = sprintf "%.2f", $hashRef->{'bse'}->{'core'}->{'screen_radius'};
   for( my $i = 0; $i< scalar @{$hashRef->{'calc'}->{'edges'}}; $i++ ) {
@@ -352,12 +370,20 @@ sub grabCoreScreenFiles {
         or die "Failed to grab rpot\n../SCREEN/${zstring}/zR${pawrad}/rpot ./rpot.${zstring}\n";
     }
 
-    if( $hashRef->{'bse'}->{'screen'}->{'core_offset'}->{'enable'} ) {
-      copy( "../SCREEN/${zstring}/zR${pawrad}/cls", "cls.${compactZstring}" )
-      or warn "WARNING!\nCore-level shift support requested, "
-            . "but could not find ../SCREEN/${zstring}/zR${pawrad}/cls\n\$!"
-            . "No CLS will be done for this site!\n";
-
+#    if( $hashRef->{'bse'}->{'screen'}->{'core_offset'}->{'enable'} ) {
+#      copy( "../SCREEN/${zstring}/zR${pawrad}/cls", "cls.${compactZstring}" )
+#      or warn "WARNING!\nCore-level shift support requested, "
+#            . "but could not find ../SCREEN/${zstring}/zR${pawrad}/cls\n\$!"
+#            . "No CLS will be done for this site!\n";
+#
+    if( $hashRef->{'bse'}->{'cls'}->{'enable'} ) {
+      my $nl = sprintf "%1i%1s", $nnum, $spdf[$lnum];
+      open OUT, ">", "cls.${compactZstring}" or die "$!";
+      my $rad = sprintf "%3.2f", $pawrad;
+      my $j = sprintf "%04i", $elnum;
+      printf OUT "%f\n", $cls->{'total'}->{$elname}->{$j}->{$nl}->{$rad};
+      close OUT;
+      $hashRef->{'bse'}->{'cls'}->{$elname}->{$j}->{$nl} = $cls->{'total'}->{$elname}->{$j}->{$nl}->{$rad};
     } else {  # If we don't want CLS then make sure the file is not here
       if( -e "cls.${compactZstring}" )
       {
@@ -579,10 +605,19 @@ sub screenParams {
 
   $newRef->{'bse'}->{'screen'} = {};
   copyAndCompare( $newRef->{'bse'}->{'screen'}, $commonRef->{'screen'}, $oldRef->{'bse'}->{'screen'},
-                  $newRef->{'bse'}, [ 'mode', 'core_offset' ]  );
+                  $newRef->{'bse'}, [ 'mode' ]  );
   copyAndCompare( $newRef->{'bse'}->{'screen'}, $commonRef->{'screen'}->{'grid2'}, 
                   $oldRef->{'bse'}->{'screen'},
                   $newRef->{'bse'}, [ 'lmax' ]  );
+
+}
+
+sub clsParams {
+  my ($newRef, $commonRef, $oldRef ) = @_;
+  print $commonRef->{'cls'}->{'enable'} . "\n";
+  $newRef->{'bse'}->{'cls'} = {} unless exists $newRef->{'bse'}->{'cls'};
+  copyAndCompare( $newRef->{'bse'}->{'cls'}, $commonRef->{'cls'}, $oldRef->{'bse'}->{'cls'},
+                  $newRef->{'bse'}, [ 'enable' ]  );  
 
 }
 
