@@ -58,6 +58,16 @@ else
   die "Failed to open config file $dataFile\n$!";
 }
 
+####
+# Compatibility with older versions
+unless( exists $commonOceanData->{"cls"} ) {
+  $commonOceanData->{"cls"} = {};
+  $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
+  $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
+  $commonOceanData->{"cls"}->{'energy'} = $commonOceanData->{"screen"}->{"core_offset"}->{"energy"};
+  $override = 1;
+} 
+####
 # Early exit if not core-level calculation
 my $earlyExit = 0;
 $earlyExit = 1 unless( $commonOceanData->{'cls'}->{'enable'} );
@@ -117,16 +127,6 @@ if( open( my $in, "<", $dataFile ))
   close($in);
 } 
 
-####
-# Compatibility with older versions
-unless( exists $commonOceanData->{"cls"} ) {
-  $commonOceanData->{"cls"} = {};
-  $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
-  $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
-  $commonOceanData->{"cls"}->{'energy'} = $commonOceanData->{"screen"}->{"core_offset"}->{"energy"};
-  $override = 1;
-} 
-####
 
 runVOffset(  $commonOceanData, $dftData, $clsData);
 runWOffset(  $commonOceanData, $screenData, $clsData);
