@@ -78,19 +78,19 @@ program coreExchange
 !  close(99)
 
 
-  write(6,'(A2,A5,X,A14,A14,A14)') '##', 'site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
+  write(6,'(A2,A5,X,A14,A14,A14)') '##', 'N L site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
   ! 
   !
-  open(unit=99,file='edgelist',form='formatted',status='old')
-  read(99,*) ZZ, nc, lc
-  close(99)
+!  open(unit=99,file='edgelist',form='formatted',status='old')
+!  read(99,*) ZZ, nc, lc
+!  close(99)
 
-!  open(unit=98,file='cls.inp',form='formatted',status='old')
-  open(unit=98,file='sitelist',form='formatted',status='old') 
+  open(unit=98,file='exx.inp',form='formatted',status='old')
+!  open(unit=98,file='sitelist',form='formatted',status='old') 
   read(98,*) nsite
   do isite = 1,nsite
-    read(98,*) el, ZZ, iisite
-!    read(98,*) el, iisite, ZZ, nc, lc
+!    read(98,*) el, ZZ, iisite
+    read(98,*) el, ZZ, nc, lc, iisite
 
     write(str,'(A8,I3.3)') 'prjfilez', ZZ
     write(add10, '(A1,I3.3,A1,I2.2,A1,I2.2)') 'z', ZZ, 'n', nc, 'l', lc
@@ -188,7 +188,8 @@ program coreExchange
     enddo
   enddo
 !  write(6,*) 'Local den matrix trace', su
-  write(6,'(A2,1X,I4.4,1X,F14.6,E14.6,F14.6)') el, iisite, real(f3)/real(nk,DP)/omega, &
+  write(6,'(A2,1X,I1.1,1X,I1.1,1X,I4.4,1X,F14.6,E14.6,F14.6)') el, nc, lc, iisite, & 
+                                                       real(f3)/real(nk,DP)/omega, &
                                                        aimag(f3)/real(nk,DP)/omega, su
 
 !  do j = 1, 5

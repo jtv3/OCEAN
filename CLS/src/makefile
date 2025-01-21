@@ -31,3 +31,6 @@ getomega.o:
 
 clean:
 	rm coreExchange.o newthreey.o newgetprefs.o newgetylm.o
+
+install:
+	cp corex.x $(INSTDIR)/

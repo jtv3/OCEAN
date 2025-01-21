@@ -6,6 +6,7 @@
 # `License' in the root directory of the present distribution.
 #
 #   
+# John Vinson, Jan 2025
     
 use strict;
 use File::Copy;
@@ -32,6 +33,11 @@ if (! $ENV{"OCEAN_BIN"} ) {
 if (! $ENV{"OCEAN_WORKDIR"}){ $ENV{"OCEAN_WORKDIR"} = `pwd` . "../" ; }
 ###########################
 
+my $override = 0;
+if( scalar @ARGV > 0 ) {
+  $override = $ARGV[0];
+}
+
 my @spdf = ( 's', 'p', 'd', 'f' );
 
 my $json = JSON::PP->new;
@@ -56,10 +62,10 @@ else
 my $earlyExit = 0;
 $earlyExit = 1 unless( $commonOceanData->{'cls'}->{'enable'} );
 $earlyExit = 1 if( $commonOceanData->{'calc'}->{'mode'} eq 'val' );
-if( $earlyExit != 0 )
+if( $earlyExit != 0 && $override == 0 )
 {
   print "EXIT EARLY\n";
-#  exit 0;
+  exit 0;
 }
 
 
@@ -111,18 +117,22 @@ if( open( my $in, "<", $dataFile ))
   close($in);
 } 
 
-#### 
-# Two components of CLS, W and V_X
+####
+# Compatibility with older versions
+unless( exists $commonOceanData->{"cls"} ) {
+  $commonOceanData->{"cls"} = {};
+  $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
+  $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
+  $commonOceanData->{"cls"}->{'energy'} = $commonOceanData->{"screen"}->{"core_offset"}->{"energy"};
+  $override = 1;
+} 
+####
 
-if( $commonOceanData->{'cls'}->{'enable'} ) {
-  runVOffset(  $commonOceanData, $dftData, $clsData);
-  runWOffset(  $commonOceanData, $screenData, $clsData);
-  runVWSum( $commonOceanData, $clsData);
-}
-#else  {
-#  runVOffset(  $commonOceanData, $dftData, $clsData);
-#  runWOffset(  $commonOceanData, $screenData, $clsData);
-#}
+runVOffset(  $commonOceanData, $dftData, $clsData);
+runWOffset(  $commonOceanData, $screenData, $clsData);
+runEXX( $commonOceanData, $dftData, $clsData, $override);
+
+runVWSum( $commonOceanData, $clsData);
 
 
 exit 0;
@@ -178,7 +188,7 @@ sub runVWSum
         $EXX = $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
       }
       my $W = $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad};
-      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} = ($V + $W + $EXX)*$Ry2eV;
+      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} = ($V + $W)*$Ry2eV + $EXX;
 #      print "$el $j $nl pot $rad $W\n";
       
       if( $cod->{'cls'}->{'average'} ) {
@@ -219,6 +229,116 @@ sub runVWSum
   close OUT;
 }
 
+sub runEXX
+{
+  my ( $cod, $dft, $cls, $or ) = @_;
+  
+  unless ( $or ) {
+    return unless( $cod->{'do_exx'} );
+  }
+
+  if( $cod->{'structure'}->{'metal'} ) {
+    die "Metals not yet supported for exact exchange\n";
+  }
+
+  $cls->{'EXX'} = {} unless exists $cls->{'EXX'};
+  $cls->{'EXX'}->{'edge'} = {} unless exists $cls->{'EXX'}->{'edge'};
+  $cls->{'EXX'}->{'units'} = "eV";
+
+  my @ibe = indxByElement( $cod );
+  my @runXtot;
+  my %uniqueZ;
+  my %uniqueZNL;
+  foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
+    my ($i, $n, $l) = split ' ', $site;
+    my ($el, $j ) = split ' ', $ibe[$i-1];
+    my $z = $cod->{'structure'}->{'znucl'}[$cod->{'structure'}->{'typat'}[$i-1]-1];
+    my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+    $cls->{'EXX'}->{'edge'}->{$el} = {} unless( exists( $cls->{'EXX'}->{'edge'}->{$el} ) );
+    $cls->{'EXX'}->{'edge'}->{$el}->{$j} = {} unless( exists( $cls->{'EXX'}->{'edge'}->{$el}->{$j} ) );
+    $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl} = {} unless( exists( $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl} ) );
+    my $s = sprintf "%2s %3i %1i %1i %04i", $el, $z, $n, $l, $j;
+    unless( $dft->{'bse'}->{'hash'} eq $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'BSE hash'} ) {
+      push @runXtot, $s;
+      $uniqueZ{ $z } = 1;
+      my $znl = sprintf "%02i %1i %1i", $z, $n, $l;
+      $uniqueZNL{ $znl } = 1;
+    }
+  }
+
+  if( scalar @runXtot > 0 ) {
+    unless( -d "exx" ) {
+      mkdir "exx" or die "$!";
+    }
+    chdir "exx";
+
+    writeAvecs( $cod->{'structure'} );
+    writeKmesh( $cod->{'bse'} );
+    copy( catfile( $ENV{"OCEAN_BIN"}, 'Pquadrature' ), 'Pquadrature') or die "$!";
+    copy( catfile( $ENV{"OCEAN_BIN"}, 'sphpts' ), 'sphpts') or die "$!";
+    
+    foreach my $z (keys %uniqueZ ) {
+      my $prjFile = sprintf( "prjfilez%03i", $z );
+      copy catfile( updir(), updir(), 'OPF', 'zpawinfo', $prjFile ), $prjFile or die "$!";
+    }
+    my @gk;
+    my $dirname = catdir( updir(), updir(), "OPF", "zpawinfo" );
+    opendir (my $dir, $dirname ) or die "$!";
+    while ( my $file = readdir( $dir ) ) {
+      next unless -f catfile( $dirname, $file );
+      if( $file =~ m/^gk/ ) {
+#        print catfile( $dirname, $file ) . "\n";
+#        $gk{ catfile( $dirname, $file ) } = 1;
+        push @gk, $file;
+      }
+    }
+    closedir $dir;
+
+    open OUT, ">", "edgelist" or die "Failed to open edgelist\n$!";
+    foreach my $znl (keys %uniqueZNL) {
+      my @znl = split ' ', $znl;
+      printf OUT "%i %i %i\n", $znl[0], $znl[1], $znl[2];
+      my $add10 = sprintf "z%03in%02il%02i", $znl[0], $znl[1], $znl[2];
+      foreach my $file (@gk) {
+        if( $file =~ m/$add10/ ) {
+          copy catfile( $dirname, $file), $file;
+        }
+      }      
+    }
+    close OUT;
+    
+    open OUT, ">", "exx.inp" or die "Failed to open sitelist\n$!";
+    printf OUT "%i\n", scalar @runXtot;
+    foreach my $s (@runXtot) {
+      my @s = split ' ', $s;
+      my $par = sprintf "parcksv.%2s%04i", $s[0], $s[4];
+      copy catfile( updir(), updir(), 'PREP', 'BSE', $par), $par or die "$!";
+      print OUT "$s\n";
+    }
+    close OUT;
+
+    system("$ENV{'OCEAN_BIN'}/corex.x > corex.log") == 0 or die "Failed to run corex.x\n$!";
+    open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";
+    <IN>;
+    foreach my $s (@runXtot) {
+      my ($el, $z, $n, $l, $j)  = split ' ', $s;
+      my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+      <IN> =~ m/^(\w+\s+\d+\s+\d+\s+\d+)\s+(-?\d+\.\d+)/ or die "$_";
+      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'BSE hash'} = $dft->{'bse'}->{'hash'};
+      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'} = $2;
+      print $s . "  " . $1 . "\n";
+    } 
+    close IN;
+    
+
+    chdir updir();
+    my $jsonFile = "cls.json" ;
+    open OUT, ">", $jsonFile or die "$!";
+    print OUT $json->encode( $cls );
+    close OUT; 
+  }
+}
+  
 # 
 sub runVOffset
 {
@@ -465,6 +585,15 @@ sub writeAvecs
                                 $structureRef->{'avecs'}[$i][2];
 
   }
+  close OUT;
+}
+
+sub writeKmesh
+{
+  my $ref = $_[0];
+
+  open OUT, ">", "kmesh.ipt" or die "Failed to open kmesh.ipt\n$!";
+  printf OUT "%i %i %i\n", $ref->{'kmesh'}[0], $ref->{'kmesh'}[1], $ref->{'kmesh'}[2];
   close OUT;
 }
 
