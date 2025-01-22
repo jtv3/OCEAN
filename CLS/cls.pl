@@ -168,9 +168,11 @@ sub runVWSum
 
   open OUT, ">", "core_shift.log" or die "Failed to open core_shift.log\n$!";
 
-  my $Ry2eV = 13.605698066;
+  #my $Ry2eV = 13.605698066;
+  my $Ry2eV = 13.605693122990; #2022 CODATA
   my @ibe = indxByElement( $cod );
   foreach my $rad (@shells) {
+    printf OUT "Radius = %.2f Bohr\n", $rad;
     print OUT "Site index    New potential   new1/2 Screening   core_offset       total offset\n";
     print OUT "                  (eV)             (eV)              (eV)              (eV)\n";
     my %avg;
@@ -188,17 +190,23 @@ sub runVWSum
         $EXX = $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
       }
       my $W = $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad};
-      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} = ($V + $W)*$Ry2eV + $EXX;
-#      print "$el $j $nl pot $rad $W\n";
+
+      # V is typically negative (though pseudopotentials could be strange), however, for the 
+      #  all-electron system, the total potential is going to be attractive for the core-level 
+      #  orbitals. The more negative, the more bound the core level, the more energy it will
+      #  take to excite it, hence the negative sign out front. 
+      # W is positive, the screening reduces the energy needed to excite, so it should have 
+      #  the opposite sign of V
+      # X is defined to be negative
+      $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} = -( ($V + $W)*$Ry2eV + $EXX );
       
       if( $cod->{'cls'}->{'average'} ) {
         $count{ $znl } += 1;
         $avg{ $znl } += $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} ;
-#        printf "%i %f\n", $count{ $znl }, $avg{ $znl };
       }
     }
 
-#    if( $cod->{'cls'}->{'average'} ) {
+
     foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
       my ($i, $n, $l) = split ' ', $site;
       my ($el, $j ) = split ' ', $ibe[$i-1];
@@ -206,9 +214,7 @@ sub runVWSum
       my $znl = sprintf "%2s%1i%01i", $z, $n, $l;
       my $nl = sprintf "%1i%1s", $n, $spdf[$l];
       if( $cod->{'cls'}->{'average'} ) {
-#        $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} -= ($avg{ $znl }/$count{ $znl });
         $ZNL{ $znl } = ($avg{ $znl })/($count{ $znl });
-#        printf "%f %f %i\n", $ZNL{ $znl }, $avg{ $znl }, $count{ $znl };
       }
       $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} -= $ZNL{ $znl };
       printf OUT  "   %7i   %16.9f  %15.9f  %15.9f  %16.7f\n", $j, 
@@ -217,7 +223,6 @@ sub runVWSum
                   $ZNL{ $znl }, $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad};
                   
     }
-#    }
   }
   close OUT;
 
