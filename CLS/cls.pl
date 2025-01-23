@@ -36,6 +36,9 @@ if (! $ENV{"OCEAN_WORKDIR"}){ $ENV{"OCEAN_WORKDIR"} = `pwd` . "../" ; }
 my $override = 0;
 if( scalar @ARGV > 0 ) {
   $override = $ARGV[0];
+  # Any non-zero value will trigger EXX calculation, but EXX will still only
+  #  be added to the total if enabled.
+  # A value of 2 will cause mpi_avg.x to be run w/o MPI, allowing interactive
 }
 
 my @spdf = ( 's', 'p', 'd', 'f' );
@@ -65,7 +68,7 @@ unless( exists $commonOceanData->{"cls"} ) {
   $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
   $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
   $commonOceanData->{"cls"}->{'energy'} = $commonOceanData->{"screen"}->{"core_offset"}->{"energy"};
-  $override = 1;
+  $override = 1 if( $override == 0 );
 } 
 ####
 # Early exit if not core-level calculation
@@ -128,7 +131,7 @@ if( open( my $in, "<", $dataFile ))
 } 
 
 
-runVOffset(  $commonOceanData, $dftData, $clsData);
+runVOffset(  $commonOceanData, $dftData, $clsData, $override);
 runWOffset(  $commonOceanData, $screenData, $clsData);
 runEXX( $commonOceanData, $dftData, $clsData, $override);
 
@@ -347,7 +350,7 @@ sub runEXX
 # 
 sub runVOffset
 {
-  my ( $cod, $dft, $cls ) = @_;
+  my ( $cod, $dft, $cls, $or ) = @_;
 
   my $t0 = [gettimeofday];
   print "V offset\n";
@@ -416,8 +419,13 @@ sub runVOffset
     print OUT "500 0.01\n";
     close OUT;
 
-    print "$cod->{'computer'}->{'para_prefix'} $ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1\n";
-    system("$cod->{'computer'}->{'para_prefix'} $ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1" );
+    if( $or == 2 ) {
+      print "$ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1\n";
+      system("$ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1" );
+    } else {
+      print "$cod->{'computer'}->{'para_prefix'} $ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1\n";
+      system("$cod->{'computer'}->{'para_prefix'} $ENV{'OCEAN_BIN'}/mpi_avg.x > mpi_avg.log 2>&1" );
+    }
     if ($? == -1) {
         print "failed to execute: $!\n";
         die;
