@@ -5,6 +5,7 @@
 ! `License' in the root directory of the present distribution.
 !
 #define VAL
+#define __DO_COMPENSATED
 !
 !> @brief The OCEAN_psi module contains the type and subroutines that control the 
 !! configuration-space vectors of the BSE (psi).
@@ -1927,7 +1928,7 @@ module OCEAN_psi
 !! and only calculated if irequest and ival are passed in. 
 !! If both core and val exist then the code will *ADD* the two.
 !! Optionally you can pass in dest which will trigger REDUCE instead of ALLREDUCE.
-  subroutine OCEAN_psi_dot( p, q, rval, ierr, ival, rrequest, irequest, dest, defer )
+  subroutine OCEAN_psi_dot( p, q, rval, ierr, ival, rrequest, irequest, dest, defer, compensated )
 !    use mpi
     use OCEAN_mpi!, only : root, myid
     implicit none
@@ -1940,10 +1941,11 @@ module OCEAN_psi
     integer, intent( out ), optional :: irequest
     integer, intent( in ), optional :: dest
     logical, intent( in ), optional :: defer
+    logical, intent( in ), optional :: compensated
     !
-    real(DP) :: buffer(2)
-    integer :: my_comm, ibw, my_id
-    logical :: immediate
+    real(DP) :: buffer(2), yk_r, prod_r, t_r, cr, yk_i, prod_i, t_i, ci
+    integer :: my_comm, ibw, my_id, ia, ib
+    logical :: immediate, do_compensated
     real(dp), external :: DDOT
 
 !    ! This would be a programming error. No reason to allow recovery
@@ -1951,6 +1953,16 @@ module OCEAN_psi
 !      ierr = -1
 !      return
 !    endif
+
+    ! Machinery for compensated sum (currently attempting Kahan method)
+    if( present( compensated ) ) then
+      do_compensated = compensated
+    else
+      do_compensated = .false.
+#ifdef __DO_COMPENSATED
+      do_compensated = .true.
+#endif
+    endif
 
     ! Not dealing with a mix
     if( present( ival ) .and. ( present( rrequest ) .or. present( irequest ) ) ) then
@@ -2042,6 +2054,32 @@ module OCEAN_psi
     if( have_val ) then
       my_comm = p%val_comm
       my_id = p%val_myid
+      if( do_compensated ) then
+        cr = 0.0_DP
+        ci = 0.0_DP
+        do ibw = 1, psi_val_bw
+          do ia = 1, p%val_store_size
+            do ib = 1, psi_bands_pad
+              prod_r = p%val_min_r(ib,ia,ibw)*q%val_min_r(ib,ia,ibw) &
+                     + p%val_min_i(ib,ia,ibw)*q%val_min_i(ib,ia,ibw)
+              
+              yk_r = prod_r - cr
+              t_r = rval + yk_r
+              cr = (t_r - rval) - yk_r
+              rval = t_r
+              if( present( ival ) ) then  
+                prod_i = p%val_min_r(ib,ia,ibw)*q%val_min_i(ib,ia,ibw) &
+                       - p%val_min_i(ib,ia,ibw)*q%val_min_r(ib,ia,ibw)
+                yk_i = prod_i - ci
+                t_i = ival + yk_i
+                ci = (t_i - ival) - yk_i
+                ival = t_i
+              endif
+            enddo
+          enddo
+        enddo
+              
+      else
       do ibw = 1, psi_val_bw
         ! rval is either 0 or core
         rval = rval &
@@ -2053,6 +2091,7 @@ module OCEAN_psi
                - DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,ibw), 1, q%val_min_r(:,:,ibw), 1 )
         endif
       enddo
+      endif
     endif
     ! There is no "else rval=0" here because it is taken care of above for core
 
