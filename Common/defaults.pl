@@ -1723,7 +1723,7 @@ sub fixCNBSE
   }
 
   if( $hashRef->{'bse'}->{'core'}->{'screen_radius'} < 0 ) {
-    if( $hashRef->{'screen'}->{'shells'}[-1] > 0 ) {
+    if( $hashRef->{'screen'}->{'shells'}[-1] >= 0 ) {
       $hashRef->{'bse'}->{'core'}->{'screen_radius'} = $hashRef->{'screen'}->{'shells'}[-1];
     } else {
       $hashRef->{'bse'}->{'core'}->{'screen_radius'} = abs( $hashRef->{'bse'}->{'core'}->{'screen_radius'} );
@@ -1736,7 +1736,7 @@ sub fixCNBSE
     if( abs( $hashRef->{'bse'}->{'core'}->{'screen_radius'} - $r ) < 0.01 ) {
       $found = 1;
     }
-    push @tmp, $r if( $r > 0 );
+    push @tmp, $r if( $r >= 0 );
   }
 
   $hashRef->{'screen'}->{'shells'} = \@tmp;
