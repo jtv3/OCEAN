@@ -49,7 +49,9 @@ install:
 	cd OCEAN2;       make install
 	cd POST;				 make install
 	cd PSP;					 make install
-	chmod u+x $(INSTDIR)/*.pl
+	chmod 644 $(INSTDIR)/*
+	chmod 755 $(INSTDIR)/*.pl
+	chmod 755 $(INSTDIR)/*.x
 
 instdev:
 	for F in $(SCRIPTS) $(AUX); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
