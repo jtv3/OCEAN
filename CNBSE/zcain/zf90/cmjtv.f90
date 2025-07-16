@@ -172,6 +172,10 @@ subroutine cmjtv( nsphpt, xsph, ysph, zsph, wsph, prefs )
         enddo
       endif
     enddo
+    deallocate( atomNL, atomEnergy )
+  else
+    nsemi = 0
+    allocate( semifcn( 0, 0, 0, 0 ), c2c( 0, 0 ), semiReducedEnergy( 0 ) )
   endif
   ! calculate full matrix elements
   call jtvsub( lmin, lmax, nproj, npmax, lc, nbsemel, powmax, ifcn, spcttype, ehat, qhat, q, &
@@ -193,7 +197,7 @@ subroutine cmjtv( nsphpt, xsph, ysph, zsph, wsph, prefs )
   close( unit=99 )
   !
 
-!  deallocate( ifcn, semifcn, c2c, atomEnergy, semiReducedEnergy, nbsemel, nproj, atomNL )
+  deallocate( ifcn, semifcn, c2c,  semiReducedEnergy, nbsemel, nproj )
   return
 
   contains
