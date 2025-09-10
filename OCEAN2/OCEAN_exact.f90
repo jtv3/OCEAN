@@ -11,7 +11,10 @@ module OCEAN_exact
   private
   save
 
-#define exact_sp 1
+!#define exact_sp 1
+!#define TEST
+!#define TEST1
+!#define LANCZOS_ORTHOG 1
 #ifdef exact_sp
   INTEGER, PARAMETER :: EDP = SP
 #else
@@ -210,6 +213,11 @@ module OCEAN_exact
       call OCEAN_populate_bse( sys, ierr )
       if( ierr .ne. 0 ) goto 111
 
+#ifdef TEST1
+        call pseudoherm( sys, hay_vec, ierr )
+!        call bilanctest(sys, hay_vec,ierr)
+        return
+#endif
       if( nonHerm ) then
         call OCEAN_nonHerm_diagonalize(ierr )
       else
@@ -669,6 +677,38 @@ module OCEAN_exact
     integer :: ibeta, ikpt, ivband, icband, ibw, jbeta, jkpt, jvband, jcband, jbw
     type(ocean_vector) :: psi_in, psi_out
 
+    logical :: ex
+
+#ifdef TEST
+    inquire(file='big_matrix',exist=ex)
+    if( ex ) then
+      allocate( c_slice( bse_dim ) )
+      if( myid .eq. 0 ) then
+        open(unit=99,file='big_matrix',form='unformatted',status='old')
+        write(6,*) 'RE-USE BSE Matrix'
+      endif
+      do ibasis = 1, bse_dim
+        if( myid .eq. 0 ) read(99) c_slice(:)
+        call MPI_BCAST( c_slice, bse_dim, MPI_DOUBLE_COMPLEX, 0, comm, ierr )
+        do jbasis = 1, bse_dim
+          call INFOG2L( jbasis, ibasis, bse_desc, nprow, npcol, myrow, mycol, &
+                      lrindx, lcindx, rsrc, csrc )
+          if( ( myrow .ne. rsrc ) .or. ( mycol .ne. csrc ) ) cycle
+          bse_matrix( lrindx, lcindx ) = c_slice( jbasis )
+        enddo
+      enddo
+      if( myid .eq. 0 ) close(99)
+      deallocate( c_slice )
+      return
+    else
+      if( myid .eq. 0 ) then 
+        open(unit=999,file='big_matrix',form='unformatted',status='unknown')
+        allocate( c_slice( bse_dim ) )    
+      endif
+    endif
+#endif
+      
+
     call OCEAN_psi_new( psi_in, ierr )
     call OCEAN_psi_new( psi_out, ierr )
 
@@ -706,7 +746,7 @@ module OCEAN_exact
       if( ibw .eq. 1 ) then
         psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = 1.0_DP
       else
-        psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = -1.0_DP
+        psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = 1.0_DP
       endif
       call OCEAN_energies_allow_full( sys, psi_in, ierr )
       if( ierr .ne. 0 ) return
@@ -721,7 +761,7 @@ module OCEAN_exact
         ! For now re-use mult timing for bubble
         call OCEAN_tk_start( tk_mult )
         call AI_bubble_act( sys, psi_in, psi_out, ierr )
-!          call OCEAN_energies_allow( sys, new_psi, ierr )
+!          call OCEAN_energies_allow( sys, psi_new, ierr )
         if( ierr .ne. 0 ) return
         call OCEAN_tk_stop( tk_mult )
       endif
@@ -731,7 +771,7 @@ module OCEAN_exact
         call OCEAN_tk_start( tk_lr )
         call OCEAN_ladder_act( sys, psi_in, psi_out, ierr )
         if( ierr .ne. 0 ) return
-!          call OCEAN_energies_allow( sys, new_psi, ierr )
+!          call OCEAN_energies_allow( sys, psi_new, ierr )
         call OCEAN_tk_stop( tk_lr )
       endif
 
@@ -761,7 +801,7 @@ module OCEAN_exact
         if( ibw .eq. 1 ) then
           psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = 1.0_DP
         else
-          psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = -1.0_DP
+          psi_in%valr( icband, ivband, ikpt, ibeta, ibw ) = 1.0_DP
         endif
         call OCEAN_energies_allow_full( sys, psi_in, ierr )
         if( ierr .ne. 0 ) return
@@ -807,7 +847,18 @@ module OCEAN_exact
           endif
         endif 
 
-        call INFOG2L( ibasis, jbasis, bse_desc, nprow, npcol, myrow, mycol, &
+#ifdef TEST
+        if( myid .eq. 0 ) then
+          if( jbw .eq. 1 ) then
+            c_slice( jbasis ) = cmplx( psi_out%valr(jcband, jvband, jkpt, jbeta, jbw ), &
+                             psi_out%vali(jcband,jvband,jkpt,jbeta,jbw ), EDP )
+          else
+            c_slice( jbasis ) = -cmplx( psi_out%valr(jcband, jvband, jkpt, jbeta, jbw ), &
+                             psi_out%vali(jcband,jvband,jkpt,jbeta,jbw ), EDP )
+          endif
+        endif
+#endif
+        call INFOG2L( jbasis, ibasis, bse_desc, nprow, npcol, myrow, mycol, &
                       lrindx, lcindx, rsrc, csrc )
 
 !        if( myid .eq. root .and. ibasis .eq. jbasis ) then
@@ -816,13 +867,26 @@ module OCEAN_exact
 !        endif
         if( ( myrow .ne. rsrc ) .or. ( mycol .ne. csrc ) ) cycle
         bse_ij = CMPLX(  psi_out%valr(jcband, jvband, jkpt, jbeta, jbw ), &
-                        -psi_out%vali(jcband,jvband,jkpt,jbeta,jbw ), EDP )
-        bse_matrix( lrindx, lcindx ) = bse_ij
+                         psi_out%vali(jcband,jvband,jkpt,jbeta,jbw ), EDP )
+        if( jbw .eq. 1 ) then
+          bse_matrix( lrindx, lcindx ) = bse_ij
+        else
+          bse_matrix( lrindx, lcindx ) = -bse_ij
+        endif
 
       enddo
+#ifdef TEST
+      if( myid .eq. 0 ) write(999) c_slice
+#endif
       
     enddo
     call blacs_barrier( context, 'A' )
+#ifdef TEST
+    if( myid .eq. 0 ) then
+      close(999)
+      deallocate( c_slice )
+    endif
+#endif
     if( myid .eq. root ) write(6,*) 'Finished populating valence'
   
   end subroutine OCEAN_populate_bse_valence
@@ -1593,5 +1657,321 @@ module OCEAN_exact
     deallocate( x, psi, cvec, evec )
 
   end subroutine create_echamp
+
+#ifdef TEST1
+  subroutine pseudoherm(sys, hay_vec, ierr )
+    use AI_kinds
+    use OCEAN_mpi
+    use OCEAN_system
+    use OCEAN_psi
+    use OCEAN_constants, only : Hartree2eV, eV2Hartree, bohr, alphainv
+        
+    implicit none
+    type( o_system ), intent( in ) :: sys
+    type( ocean_vector ), intent( in ) :: hay_vec
+    integer, intent(inout):: ierr
+
+
+    complex(EDP), allocatable, dimension(:) :: a, b
+    complex(EDP), allocatable, dimension(:) :: hay, psi_s, psi_t, psi_r
+    complex(EDP), allocatable, dimension(:) :: krylovoverlaps
+    complex(EDP), allocatable, dimension(:) :: tmp_b, tmp_dl, tmp_du, tmp_d
+    complex(EDP) :: ctmp, eps, refrac, ctmp2
+    real(DP) ::  el, eh, gam0, ere, mu, fact, imeps, reeps, lossf, reflct, rtmp, b0
+    integer :: niter, iter, ibw, ibeta, ikpt, ibv, iband, ibasis, ie, ne, i, j
+    
+    niter = 400
+
+    if( myid .ne. 0 ) return
+    allocate( hay(bse_dim ), psi_s(bse_dim), psi_t(bse_dim), psi_r(bse_dim) )
+    allocate( a(niter), b(niter+1), krylovoverlaps(niter+1) )
+
+    ibasis = 0
+    do ibw = 1, sys%nbw
+      do ibeta = 1, sys%nbeta
+        do ikpt = 1, sys%nkpts
+          do ibv = 1, sys%cur_run%val_bands
+            do iband = 1, sys%cur_run%num_bands
+              ibasis = ibasis + 1 
+              hay(ibasis) = cmplx( hay_vec%valr( iband, ibv, ikpt, ibeta, ibw ), &
+                                         hay_vec%vali( iband, ibv, ikpt, ibeta, ibw ), EDP )
+            enddo
+          enddo
+        enddo
+      enddo
+    enddo
+    if( sys%bwflg ) then
+      psi_s(1:bse_dim/2) = hay(1:bse_dim/2)
+      psi_s(bse_dim/2+1:bse_dim) = -hay(bse_dim/2+1:bse_dim )
+    else
+      ierr = 5124
+      return
+      psi_s(:) = hay(:)
+    endif
+
+    call ZGEMV( 'N', bse_dim, bse_dim, 1.0_EDP, bse_matrix, bse_dim, psi_s, 1, 0.0_EDP, psi_t, 1 )
+    ! This is the <s|F|t>, where the back half of t gets a sign swap
+    write(6,*) dot_product(psi_s,psi_s), dot_product(psi_t,psi_t)
+    ctmp = dot_product( psi_s(1:bse_dim/2), psi_t(1:bse_dim/2) ) &
+         - dot_product( psi_s(bse_dim/2+1:bse_dim), psi_t(bse_dim/2+1:bse_dim) )
+    write(6,*) 'b0', ctmp, sqrt(ctmp)
+    b0 = sqrt(ctmp)
+    ctmp = 1.0_EDP / sqrt(ctmp)
+    psi_s(:) = psi_s(:) * ctmp
+    psi_t(:) = psi_t(:) * ctmp
+    psi_r(:) = 0.0_EDP
+    b(1) = 0.0_EDP
+    krylovoverlaps(1) = dot_product( psi_s, hay )
+
+    do iter = 1, niter
+      a(iter) = dot_product(psi_t(1:bse_dim/2), psi_t(1:bse_dim/2) ) &
+               - dot_product( psi_t(bse_dim/2+1:bse_dim), psi_t(bse_dim/2+1:bse_dim) )
+      psi_t(:) = psi_t(:) - a(iter)*psi_s(:) - b(iter)*psi_r(:)
+      psi_r(:) = psi_s(:)
+      psi_s(:) = psi_t(:)
+      call ZGEMV( 'N', bse_dim, bse_dim, 1.0_EDP, bse_matrix, bse_dim, psi_s, 1, 0.0_EDP, psi_t, 1 )
+      ctmp = dot_product( psi_s(1:bse_dim/2), psi_t(1:bse_dim/2) ) &
+         - dot_product( psi_s(bse_dim/2+1:bse_dim), psi_t(bse_dim/2+1:bse_dim) )
+      b(iter+1) = sqrt(ctmp)
+      ctmp = 1.0_EDP/b(iter+1)
+      psi_s(:) = psi_s(:) * ctmp
+      psi_t(:) = psi_t(:) * ctmp
+!      write(6,*) iter, a(iter), b(iter+1)
+      krylovoverlaps(iter+1) = dot_product( psi_s, hay )
+
+
+      write(6,'(1x,4(f20.13,2x),i6)' ) a(iter)*Hartree2eV, b(iter+1)*Hartree2eV, iter
+      write(6,*) real(krylovoverlaps(iter),DP), aimag(krylovoverlaps(iter))
+    enddo
+
+    open(unit=99,file='opcons_tri',form='formatted')
+
+    fact = hay_vec%kpref * real( 2 / sys%valence_ham_spin, DP ) * sys%celvol
+    ne = 2000
+    el = 0.0_DP
+    eh = 20.0_DP*eV2Hartree
+    gam0 = 0.1_DP*eV2Hartree
+
+    allocate( tmp_d(niter), tmp_b(niter), tmp_du(niter-1), tmp_dl(niter-1) )
+
+    do ie = 1,2 * ne, 2
+      ere = el + ( eh - el ) * dble( ie ) / dble( 2 * ne )
+
+      tmp_b(:) = 0.0_DP
+      tmp_b(1) = 1.0_DP
+      do i = 1, niter
+        tmp_d( i ) = cmplx( ere, gam0, DP ) - a(i)
+      enddo
+      do i = 1, iter -2
+        tmp_du( i ) = -b(i+1)
+        tmp_dl( i ) = -(b(i+1))
+      enddo
+
+      call ZGTSV( niter, 1, tmp_dl, tmp_d, tmp_du, tmp_b, niter, ierr )
+      if( ierr .ne. 0 ) then
+        write(6,*) 'Failed at ie, ere:', ie, ere, ierr
+        return
+      endif
+
+      ctmp = b0*fact * dot_product( krylovoverlaps(1:niter), tmp_b )
+      eps = 1.0_DP - ctmp
+
+      reeps = dble( eps )
+      imeps = aimag( eps )
+      lossf = imeps / ( reeps ** 2 + imeps ** 2 )
+      refrac = sqrt(eps)
+      reflct = abs((refrac-1.0d0)/(refrac+1.0d0))**2
+      mu = 2.0d0 * ere * Hartree2eV * aimag(refrac) / ( bohr * alphainv * 1000 )
+
+      write(99,'(8(1E24.16,1X))') ere*Hartree2eV, reeps, imeps, refrac-1.0d0, mu, reflct, lossf
+    enddo
+    close(99)
+
+
+  end subroutine
+
+  subroutine bilanctest(sys, hay_vec, ierr)
+    use AI_kinds
+    use OCEAN_mpi
+    use OCEAN_system
+    use OCEAN_psi
+    use OCEAN_constants, only : Hartree2eV, eV2Hartree, bohr, alphainv
+        
+    implicit none
+    type( o_system ), intent( in ) :: sys
+    type( ocean_vector ), intent( in ) :: hay_vec
+    integer, intent(inout):: ierr
+
+    complex(EDP), allocatable, dimension(:) :: psi_new, psi_old, psi, back_psi_new, back_psi_old, back_psi, hay
+    complex(EDP), allocatable, dimension(:) :: a, b, c, krylovoverlaps(:), tmp_d, tmp_b, tmp_du, tmp_dl
+    complex(EDP) :: ctmp, eps, refrac, ctmp2
+    real(DP) ::  el, eh, gam0, ere, mu, fact, imeps, reeps, lossf, reflct, rtmp
+    integer :: niter, iter, ibw, ibeta, ikpt, ibv, iband, ibasis, ie, ne, i, j
+    complex(EDP), allocatable :: fw_basis(:,:), bk_basis(:,:)
+
+    if( myid .ne. 0 ) return
+
+    allocate( psi_new(bse_dim), psi_old(bse_dim), psi(bse_dim), back_psi_new(bse_dim), &
+              back_psi_old(bse_dim), back_psi(bse_dim), hay(bse_dim ) )
+    niter = 40
+    allocate( a(niter), b(niter+1), c(niter+1), krylovoverlaps(niter+1) )
+
+#ifdef LANCZOS_ORTHOG
+    allocate( fw_basis( bse_dim, niter ), bk_basis( bse_dim, niter ) )
+    write(6,*) 'EXTRA ORTHOG!'
+#endif
+
+    ibasis = 0
+    do ibw = 1, sys%nbw
+      do ibeta = 1, sys%nbeta
+        do ikpt = 1, sys%nkpts
+          do ibv = 1, sys%cur_run%val_bands
+            do iband = 1, sys%cur_run%num_bands
+              ibasis = ibasis + 1
+              hay(ibasis) = cmplx( hay_vec%valr( iband, ibv, ikpt, ibeta, ibw ), &
+                                         hay_vec%vali( iband, ibv, ikpt, ibeta, ibw ), EDP )
+            enddo
+          enddo
+        enddo
+      enddo
+    enddo
+    if( sys%bwflg ) then
+      psi(1:bse_dim/2) = hay(1:bse_dim/2)
+      psi(bse_dim/2+1:bse_dim) = -hay(bse_dim/2+1:bse_dim )
+    else
+      psi(:) = hay(:)
+    endif
+    back_psi(:) = psi(:)
+    a(:) = 0.0_EDP
+    b(:) = 0.0_EDP
+    c(:) = 0.0_EDP
+    psi_old(:) = 0.0_EDP
+    back_psi_old(:) = 0.0_EDP
+
+    krylovoverlaps(1) = dot_product( psi, hay )
+    
+    do iter = 1, niter
+#ifdef LANCZOS_ORTHOG
+      fw_basis(:,iter) = psi(:)
+      bk_basis(:,iter) = back_psi(:)
+#endif
+#ifdef exact_sp
+      ierr =1241024
+      return
+#endif
+      call ZGEMV( 'N', bse_dim, bse_dim, 1.0_EDP, bse_matrix, bse_dim, psi, 1, 0.0_EDP, psi_new, 1 )
+      call ZGEMV( 'C', bse_dim, bse_dim, 1.0_EDP, bse_matrix, bse_dim, back_psi, 1, 0.0_EDP, back_psi_new, 1 )
+  
+#ifdef LANCZOS_ORTHOG
+      a(iter) = dot_product( psi_new, back_psi )
+
+      psi_new(:) = psi_new(:) - b(iter)*psi_old(:)
+      back_psi_new(:) = back_psi_new(:) - conjg(c(iter))*back_psi_old(:)
+
+      psi_new(:) = psi_new(:) - a(iter)*psi(:)
+      back_psi_new(:) = back_psi_new(:) - conjg(a(iter))*back_psi(:)
+      do j = 1, 1
+      do i = iter, 1, -1
+        ctmp = dot_product(bk_basis(:,i),psi_new(:))
+        psi_new(:) = psi_new(:) - (ctmp)*fw_basis(:,i)
+        ctmp2 = dot_product(fw_basis(:,i),back_psi_new(:))
+        back_psi_new(:) = back_psi_new(:) - (ctmp2)*bk_basis(:,i)
+        write(6,*) iter, i, ctmp, ctmp2
+      enddo
+      enddo
+
+#else
+      psi_new(:) = psi_new(:) - b(iter)*psi_old(:)
+      back_psi_new(:) = back_psi_new(:) - conjg(c(iter))*back_psi_old(:)
+      a(iter) = dot_product( psi_new, back_psi )
+
+
+      psi_new(:) = psi_new(:) - a(iter)*psi(:)
+      back_psi_new(:) = back_psi_new(:) - conjg(a(iter))*back_psi(:)
+#endif
+
+      ctmp = dot_product( psi_new, back_psi_new )
+!      rtmp = conjg(ctmp)*ctmp
+!      rtmp = sqrt( rtmp )
+!      write(6,*) '--', abs(ctmp), rtmp, sqrt(abs(ctmp)), sqrt(rtmp)
+      c(iter+1) = sqrt(abs(ctmp))
+      b(iter+1) = ctmp / c(iter+1)
+  
+      psi_old(:) = psi(:)
+      back_psi_old(:) = back_psi(:)
+      
+      psi(:) = psi_new(:) / c(iter+1)
+      back_psi(:) = back_psi_new(:) / conjg( b(iter+1))
+
+!#ifdef LANCZOS_ORTHOG
+!      do i = iter, 1, -1
+!        ctmp = dot_product(bk_basis(:,i),psi(:))
+!        psi(:) = psi(:) - ctmp*fw_basis(:,i)
+!        ctmp2 = dot_product(fw_basis(:,i),back_psi(:))
+!        back_psi(:) = back_psi(:) - ctmp2*bk_basis(:,i)
+!        write(6,*) iter, i, ctmp, ctmp2
+!      enddo
+!!      rtmp = dot_product( psi, psi )
+!!      rtmp = 1.0_EDP/sqrt(rtmp)
+!!      psi(:) = psi(:) * rtmp 
+!!      rtmp = dot_product( back_psi, back_psi )
+!!      rtmp = 1.0_EDP/sqrt(rtmp)
+!!      back_psi(:) = back_psi(:) * rtmp 
+!  
+!#endif
+
+      krylovoverlaps(iter+1) = dot_product( psi, hay )
+
+      write(6,'(1x,6(f20.13,2x),i6)' ) a(iter)*Hartree2eV, b(iter+1)*Hartree2eV, c(iter+1)*Hartree2eV, iter
+      write(6,*) real(krylovoverlaps(iter),DP), aimag(krylovoverlaps(iter))
+    enddo
+
+    open(unit=99,file='opcons_tri',form='formatted')
+
+    fact = hay_vec%kpref * real( 2 / sys%valence_ham_spin, DP ) * sys%celvol    
+    ne = 2000
+    el = 0.0_DP
+    eh = 20.0_DP*eV2Hartree
+    gam0 = 0.1_DP*eV2Hartree
+
+    allocate( tmp_d(niter), tmp_b(niter), tmp_du(niter-1), tmp_dl(niter-1) )
+
+    do ie = 1,2 * ne, 2
+      ere = el + ( eh - el ) * dble( ie ) / dble( 2 * ne )
+
+      tmp_b(:) = 0.0_DP
+      tmp_b(1) = 1.0_DP
+      do i = 1, niter
+        tmp_d( i ) = cmplx( ere, gam0, DP ) - a(i)
+      enddo
+      do i = 1, iter -2
+        tmp_du( i ) = -b(i+1)
+        tmp_dl( i ) = -c(i+1)
+      enddo
+
+      call ZGTSV( niter, 1, tmp_dl, tmp_d, tmp_du, tmp_b, niter, ierr )
+      if( ierr .ne. 0 ) then
+        write(6,*) 'Failed at ie, ere:', ie, ere, ierr
+        return
+      endif
+
+      ctmp = fact * dot_product( krylovoverlaps(1:niter), tmp_b )
+      eps = 1.0_DP - ctmp
+
+      reeps = dble( eps )
+      imeps = aimag( eps )
+      lossf = imeps / ( reeps ** 2 + imeps ** 2 )
+      refrac = sqrt(eps)
+      reflct = abs((refrac-1.0d0)/(refrac+1.0d0))**2
+      mu = 2.0d0 * ere * Hartree2eV * aimag(refrac) / ( bohr * alphainv * 1000 )
+
+      write(99,'(8(1E24.16,1X))') ere*Hartree2eV, reeps, imeps, refrac-1.0d0, mu, reflct, lossf
+    enddo
+    close(99)
+
+  end subroutine
+#endif
+      
+      
 
 end module OCEAN_exact

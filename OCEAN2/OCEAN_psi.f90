@@ -1707,11 +1707,11 @@ module OCEAN_psi
     endif
 
     if( have_val ) then !.and. x%val_store_size .gt. 0 ) then
-      do ibw = 1, psi_val_bw
+!      do ibw = 1, psi_val_bw
         rval = rval &
-             + DDOT( x%val_store_size * psi_bands_pad, x%val_min_r(:,:,ibw), 1, x%val_min_r(:,:,ibw), 1 ) &
-             + DDOT( x%val_store_size * psi_bands_pad, x%val_min_i(:,:,ibw), 1, x%val_min_i(:,:,ibw), 1 ) 
-      enddo
+             + DDOT( x%val_store_size * psi_bands_pad * psi_val_bw, x%val_min_r(:,:,:), 1, x%val_min_r(:,:,:), 1 ) &
+             + DDOT( x%val_store_size * psi_bands_pad * psi_val_bw, x%val_min_i(:,:,:), 1, x%val_min_i(:,:,:), 1 ) 
+!      enddo
     endif
 
     if( present( defer ) ) then
@@ -1927,7 +1927,7 @@ module OCEAN_psi
 !! and only calculated if irequest and ival are passed in. 
 !! If both core and val exist then the code will *ADD* the two.
 !! Optionally you can pass in dest which will trigger REDUCE instead of ALLREDUCE.
-  subroutine OCEAN_psi_dot( p, q, rval, ierr, ival, rrequest, irequest, dest, defer )
+  subroutine OCEAN_psi_dot( p, q, rval, ierr, ival, rrequest, irequest, dest, defer, involution )
 !    use mpi
     use OCEAN_mpi!, only : root, myid
     implicit none
@@ -1940,12 +1940,19 @@ module OCEAN_psi
     integer, intent( out ), optional :: irequest
     integer, intent( in ), optional :: dest
     logical, intent( in ), optional :: defer
+    logical, intent( in ), optional :: involution
     !
     real(DP) :: buffer(2)
     integer :: my_comm, ibw, my_id
-    logical :: immediate
+    logical :: immediate, do_involution
     real(dp), external :: DDOT
 
+    do_involution = .false.
+    if( present( involution) ) then
+      do_involution = involution
+      if( psi_val_bw .eq. 1 ) do_involution = .false.
+!      if(myid .eq. 0 ) write(6,*) 'involution', do_involution
+    endif
 !    ! This would be a programming error. No reason to allow recovery
 !    if( present( ival ) .neqv. present( irequest ) ) then
 !      ierr = -1
@@ -2039,20 +2046,38 @@ module OCEAN_psi
 
     my_comm = p%core_comm
     my_id = p%core_myid
+    ! rval is either 0 or core
     if( have_val ) then
       my_comm = p%val_comm
       my_id = p%val_myid
-      do ibw = 1, psi_val_bw
-        ! rval is either 0 or core
+      ! Involution is defined in M. Gr{\: u}ning et al, Comp. Mater. Sci. 50, 2148 (2011)
+      ! doi: 10.1016/j.commatsci.2011.02.021
+      ! But basically, flip the sign on the backward half
+      if( do_involution ) then
+!        if( myid .eq. 0 ) write(6,*) 'involution'
         rval = rval &
-             + DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,ibw), 1, q%val_min_r(:,:,ibw), 1 ) &
-             + DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,ibw), 1, q%val_min_i(:,:,ibw), 1 )
-        if( present( ival ) ) then
+           + DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,1), 1, q%val_min_r(:,:,1), 1 ) &
+           + DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,1), 1, q%val_min_i(:,:,1), 1 ) &
+           - DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,2), 1, q%val_min_r(:,:,2), 1 ) &
+           - DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,2), 1, q%val_min_i(:,:,2), 1 )
+      else
+        rval = rval &
+           + DDOT( psi_bands_pad * p%val_store_size * psi_val_bw, p%val_min_r(:,:,:), 1, q%val_min_r(:,:,:), 1 ) &
+           + DDOT( psi_bands_pad * p%val_store_size * psi_val_bw, p%val_min_i(:,:,:), 1, q%val_min_i(:,:,:), 1 )
+      endif
+      if( present( ival ) ) then
+        if( do_involution ) then
           ival = ival &
-               + DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,ibw), 1, q%val_min_i(:,:,ibw), 1 ) &
-               - DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,ibw), 1, q%val_min_r(:,:,ibw), 1 )
+             + DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,1), 1, q%val_min_i(:,:,1), 1 ) &
+             - DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,1), 1, q%val_min_r(:,:,1), 1 ) &
+             - DDOT( psi_bands_pad * p%val_store_size, p%val_min_r(:,:,2), 1, q%val_min_i(:,:,2), 1 ) &
+             + DDOT( psi_bands_pad * p%val_store_size, p%val_min_i(:,:,2), 1, q%val_min_r(:,:,2), 1 )
+        else
+          ival = ival &
+             + DDOT( psi_bands_pad * p%val_store_size * psi_val_bw, p%val_min_r(:,:,:), 1, q%val_min_i(:,:,:), 1 ) &
+             - DDOT( psi_bands_pad * p%val_store_size * psi_Val_bw, p%val_min_i(:,:,:), 1, q%val_min_r(:,:,:), 1 )
         endif
-      enddo
+      endif
     endif
     ! There is no "else rval=0" here because it is taken care of above for core
 

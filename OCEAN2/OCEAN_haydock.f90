@@ -1,4 +1,4 @@
-! Copyright (C) 2015 - 2017 OCEAN collaboration
+! Copyright (C) 2015 - 2025 OCEAN collaboration
 !
 ! This file is part of the OCEAN project and distributed under the terms 
 ! of the University of Illinois/NCSA Open Source License. See the file 
@@ -44,20 +44,22 @@ module OCEAN_haydock
   LOGICAL  :: is_first = .true.
 
   LOGICAL  :: val_loud = .true.
-  LOGICAL  :: complex_haydock = .false.
+  LOGICAL  :: complex_haydock = .true.
 
   public :: OCEAN_haydock_setup, OCEAN_haydock_do
 
   contains
 
-  subroutine OCEAN_haydock_nonHerm_do( sys, hay_vec, ierr )
+  subroutine OCEAN_haydock_pseudoHerm( sys, hay_vec, ierr )
     use AI_kinds, only : DP
     use OCEAN_energies
-    use OCEAN_system, only : o_system
-    use OCEAN_psi
+    use OCEAN_system, only : o_system 
+    use OCEAN_psi 
     use OCEAN_action, only : OCEAN_xact
     use OCEAN_mpi, only : myid, root, comm
-
+    use OCEAN_filenames, only : OCEAN_filenames_spectrum
+    use OCEAN_constants, only : Hartree2eV 
+    
     implicit none
     integer, intent( inout ) :: ierr
     type( o_system ), intent( in ) :: sys
@@ -65,103 +67,164 @@ module OCEAN_haydock
     ! a depndency tracing back to calling copy and possibly copy_min, and
     ! possibly needing to go min->full, copy full, full->min
     type( ocean_vector ), intent( inout ) :: hay_vec
-
-    real(DP) :: imag_a
+      
+    complex(DP) :: ctmp, psqrtc, psqrtc2, ctmp2
+    real(DP) :: aitmp, atmp, ibtmp, rbtmp, ictmp, rctmp, rb0, ib0
     integer :: iter
-    type( ocean_vector ) :: psi, old_psi, new_psi
-    type( ocean_vector ) :: back_psi, back_old_psi, back_new_psi
+    type( ocean_vector ) :: psi_s, psi_t, psi_r
+    type( ocean_vector ) :: psi_tmp
+    
+    
+    real(DP), allocatable :: ReKrylovOverlaps( : ), ImKrylovOverlaps( : )
+    complex(DP),allocatable :: overlaps(:)
+    character( LEN = 40 ) :: abs_filename
 
-
-    ! Initialization steps
-    call OCEAN_psi_new( psi, ierr, hay_vec )
+    call OCEAN_psi_new( psi_s, ierr, hay_vec )
     if( ierr .ne. 0 ) return
 
-    call OCEAN_psi_new( back_psi, ierr, hay_vec )
+    call OCEAN_energies_sfact_copy( sys, hay_vec, psi_s, ierr )
+    if( ierr .ne. 0 ) return
+    
+    call OCEAN_psi_new( psi_r, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_zero_min( psi_r, ierr )
+    if( ierr .ne. 0 ) return
+    
+    call OCEAN_psi_new( psi_t, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_zero_min( psi_t, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_new( psi_tmp, ierr )
     if( ierr .ne. 0 ) return
 
-    call OCEAN_psi_new( new_psi, ierr )
-    if( ierr .ne. 0 ) return
-    call OCEAN_psi_zero_min( new_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_new( old_psi, ierr )
-    if( ierr .ne. 0 ) return
-    call OCEAN_psi_zero_min( old_psi, ierr )
-    if( ierr .ne. 0 ) return
+    allocate( ReKrylovOverlaps( 0:haydock_niter ), ImKrylovOverlaps( 0:haydock_niter ) )
+    ReKrylovOverlaps( : ) = 0.0_DP
+    ImKrylovOverlaps( : ) = 0.0_DP
 
 
-    call OCEAN_psi_new( back_new_psi, ierr )
+    call OCEAN_xact( sys, sys%interactionScale, psi_s, psi_tmp, ierr )
     if( ierr .ne. 0 ) return
-    call OCEAN_psi_zero_min( back_new_psi, ierr )
+    call OCEAN_psi_prep_min2full( psi_tmp, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_start_min2full( psi_tmp, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_finish_min2full( psi_tmp, ierr )
     if( ierr .ne. 0 ) return
 
-    call OCEAN_psi_new( back_old_psi, ierr )
+    call OCEAN_psi_copy_min( psi_t, psi_tmp, ierr )
+    call OCEAN_energies_allow( sys, psi_t, ierr, sfact=.true.)
+
+
+    call OCEAN_psi_dot( psi_s, psi_t, rb0, ierr, ib0, involution=.true. )
     if( ierr .ne. 0 ) return
-    call OCEAN_psi_zero_min( back_old_psi, ierr )
+    write(6,*) rb0, ib0
+
+    ctmp = sqrt(cmplx(rb0,ib0,DP))
+    rb0 = real(ctmp,DP)
+    ib0 = aimag(ctmp)
+    if( myid .eq. 0 ) write(6,*) 'b0:', rb0, ib0
+
+    
+    call OCEAN_psi_divide( psi_s, ierr, rb0, ib0 )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_divide( psi_t, ierr, rb0, ib0 )
     if( ierr .ne. 0 ) return
 
-    if( myid .eq. root ) then
-      write ( 6, '(2x,1a8,1e15.8)' ) ' mult = ', hay_vec%kpref
-      write(6,*) sys%interactionScale, haydock_niter
-    endif
-    call MPI_BARRIER( comm, ierr )
-    !\Initialization
+    call OCEAN_psi_dot( psi_s, hay_vec, ReKrylovOverlaps( 0 ), ierr, ImKrylovOverlaps( 0 ) )
+    if( ierr .ne. 0 ) return
 
-
+    real_b(0) = 0.0_DP
+    imag_b(0) = 0.0_DP
 
     do iter = 1, haydock_niter
       if( sys%cur_run%have_val ) then
         if( myid .eq. root ) write(6,*)   " iter. no.", iter-1
       endif
 
-
-      call OCEAN_energies_allow( sys, psi, ierr )
-      if( ierr .ne. 0 ) return
-      call OCEAN_energies_allow( sys, back_psi, ierr )
-      if( ierr .ne. 0 ) return
-
-
-      call OCEAN_xact( sys, sys%interactionScale, psi, new_psi, ierr )
-      if( ierr .ne. 0 ) return
-      ! need the action of the Hermitian conjugate of the Hamiltonian
-      !  obviously we are only bothering to do this when H isn't Hermitian
-      call OCEAN_xact( sys, sys%interactionScale, back_psi, back_new_psi, ierr, .true. )
+      call OCEAN_psi_copy_min( psi_tmp, psi_t, ierr )
+      call OCEAN_energies_allow( sys, psi_tmp, ierr, sfact=.true. )
+      call OCEAN_psi_dot( psi_t, psi_tmp, real_a(iter-1), ierr, imag_a(iter-1) )
       if( ierr .ne. 0 ) return
 
-      ! This should be hoisted back up here
-      call haydock_abc_1( sys, psi, new_psi, old_psi, back_psi, back_new_psi, back_old_psi, & 
-                          iter, ierr )
+      call OCEAN_psi_axpy( -real_a(iter-1), psi_s, psi_t, ierr, -imag_a(iter-1))
+      if( ierr .ne. 0 ) return
 
+      call OCEAN_psi_axpy( -real_b(iter-1), psi_r, psi_t, ierr, -imag_b(iter-1))
+      if( ierr .ne. 0 ) return
+
+      call OCEAN_psi_copy_min( psi_r, psi_s, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_copy_min( psi_s, psi_t, ierr )
+      if( ierr .ne. 0 ) return
+
+      call OCEAN_psi_prep_min2full( psi_s, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_start_min2full( psi_s, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_finish_min2full( psi_s, ierr )
+      if( ierr .ne. 0 ) return 
+ 
+      call OCEAN_xact( sys, sys%interactionScale, psi_s, psi_tmp, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_prep_min2full( psi_tmp, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_start_min2full( psi_tmp, ierr ) 
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_finish_min2full( psi_tmp, ierr )
+      if( ierr .ne. 0 ) return
+
+      call OCEAN_psi_copy_min( psi_t, psi_tmp, ierr )
+      call OCEAN_energies_allow( sys, psi_t, ierr, sfact=.true.)
+      call OCEAN_psi_dot( psi_s, psi_t, rbtmp, ierr, ibtmp, involution=.true. )
+
+      ctmp = sqrt( cmplx( rbtmp, ibtmp, DP ) )
+      real_b(iter) = real(ctmp,DP)
+      imag_b(iter) = aimag(ctmp)
+      real_c(iter) = real_b(iter)
+      imag_c(iter) = 0.0_DP
+
+      
+      call OCEAN_psi_divide( psi_s, ierr, real_b(iter), imag_b(iter) )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_divide( psi_t, ierr, real_b(iter), imag_b(iter) )
+      if( ierr .ne. 0 ) return
+
+
+      call OCEAN_psi_dot( psi_s, hay_vec, ReKrylovOverlaps( iter ), ierr, ImKrylovOverlaps( iter ) )
+      if( ierr .ne. 0 ) return
+
+      if( myid .eq. 0 ) then
+        write ( 6, '(1x,6(f20.13,2x),i6)' ) real_a(iter-1)*Hartree2eV, imag_a(iter-1) * Hartree2eV, &
+                                                      real_b(iter) * Hartree2eV, imag_b(iter) * Hartree2eV, &
+                                                      real_c(iter) * Hartree2eV, imag_c(iter) * Hartree2eV, iter
+        write(6,*) ReKrylovOverlaps( iter-1 ), ImKrylovOverlaps( iter-1)
+      endif
     enddo
 
-    call OCEAN_tk_stop( tk_psisum )
-    call MPI_BARRIER( comm, ierr )
     if( myid .eq. 0 ) then
-      call haydump( haydock_niter, sys, hay_vec%kpref, ierr )
-      call redtrid(  haydock_niter, sys, hay_vec%kpref, ierr )
+      call write_lanczos( haydock_niter, sys, hay_vec%kpref, ierr )
+      if( ierr .ne. 0 ) return
+
+      ! later parallelize over energy points
+
+      call OCEAN_filenames_spectrum( sys, abs_filename, ierr )
+      if( ierr .ne. 0 ) return
+      open( unit=99, file=abs_filename, form='formatted', status='unknown' )
+      rewind 99
+      allocate( overlaps( haydock_niter ) )
+      overlaps( 1:haydock_niter) = rb0*cmplx( ReKrylovOverlaps( 0:haydock_niter-1), & 
+                                              ImKrylovOverlaps(0:haydock_niter-1),DP )
+      call write_val_tri( 99, haydock_niter, hay_vec%kpref, sys%celvol, sys%valence_ham_spin, &
+                          sys%cur_run%semiTDA, sys%cur_run%backf, overlaps, ierr )
+      close( 99 )
+      deallocate( overlaps )
+      if( ierr .ne. 0 ) return
+
     endif
+    
+    
+  end subroutine OCEAN_haydock_pseudoHerm
 
-    call OCEAN_psi_kill( psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_kill( new_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_kill( old_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_kill( back_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_kill( back_new_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call OCEAN_psi_kill( back_old_psi, ierr )
-    if( ierr .ne. 0 ) return
-
-    call MPI_BARRIER( comm, ierr )
-
-  end subroutine OCEAN_haydock_nonHerm_do
 
 
   subroutine OCEAN_haydock_do( sys, hay_vec, restartBSE, newEps, ierr )
@@ -178,8 +241,9 @@ module OCEAN_haydock
     type( ocean_vector ), intent( inout ) :: hay_vec
 
 
-    if( complex_haydock ) then
-      call OCEAN_haydock_nonHerm_do( sys, hay_vec, ierr )
+    if( sys%bwflg ) then
+      write(6,*) 'pseudo'
+      call OCEAN_haydock_pseudoHerm( sys, hay_vec, ierr )
     else
       call OCEAN_haydock_Herm_do( sys, hay_vec,  restartBSE, newEps, ierr )
     endif
@@ -2511,5 +2575,85 @@ module OCEAN_haydock
     endif
 
   end subroutine testConvergeEps
+
+  subroutine write_val_tri( fh, iter, kpref , ucvol, val_ham_spin, semiTDA, backf, overlaps, ierr )
+    use OCEAN_constants, only : Hartree2eV, bohr, alphainv
+    implicit none
+    integer, intent( in ) :: fh, iter, val_ham_spin
+    real(DP), intent( in ) :: kpref, ucvol
+    logical, intent( in ) :: semiTDA, backf
+    complex(DP), intent( in ) :: overlaps( iter )
+    integer, intent( inout ) :: ierr
+    !
+    integer :: ie, i
+    real(DP) :: ere, reeps, imeps, lossf, fact, mu, reflct
+    complex(DP) :: ctmp, arg, rp, rm, rrr, al, be, eps, refrac
+    complex(DP), allocatable :: tmp_d(:), tmp_du(:), tmp_dl(:), tmp_b(:)
+
+
+    write(6,*) iter
+    allocate( tmp_d( iter), tmp_b(iter), tmp_du(iter-1), tmp_dl(iter-1) )
+
+    fact = kpref * real( 2 / val_ham_spin, DP ) * ucvol
+
+    write(fh,"(a)") "#   omega (eV)      epsilon_1       epsilon_2       n"// &
+      "               kappa           mu (cm^(-1))    R"//  &
+      "               epsinv"
+
+    do ie = 1, 2 * ne, 2
+      ere = el + ( eh - el ) * dble( ie ) / dble( 2 * ne )
+
+      tmp_b(:) = 0.0_DP
+      tmp_b(1) = 1.0_DP
+      do i = 1, iter
+        tmp_d( i ) = cmplx( ere, gam0, DP ) - cmplx(real_a(i-1), imag_a(i-1), DP )
+      enddo
+      do i = 1, iter -1
+        tmp_du( i ) = -cmplx( real_b(i), imag_b(i) )
+        tmp_dl( i ) = -cmplx( real_c(i), imag_c(i) )
+      enddo
+
+      call ZGTSV( iter, 1, tmp_dl, tmp_d, tmp_du, tmp_b, iter, ierr )
+      if( ierr .ne. 0 ) then
+        write(6,*) 'Failed at ie, ere:', ie, ere, ierr
+        return
+      endif
+    
+      ctmp = fact * dot_product( overlaps, tmp_b )
+
+      if( semiTDA ) then
+        tmp_b(:) = 0.0_DP
+        tmp_b(1) = 1.0_DP
+        do i = 1, iter
+          tmp_d( i ) = -cmplx( ere, gam0, DP ) - cmplx(real_a(i-1), imag_a(i-1), DP )
+        enddo
+        do i = 1, iter -1
+          tmp_du( i ) = -cmplx( real_b(i), imag_b(i) )
+          tmp_dl( i ) = -cmplx( real_c(i), imag_c(i) )
+        enddo
+
+        call ZGTSV( iter, 1, tmp_dl, tmp_d, tmp_du, tmp_b, iter, ierr )
+        if( ierr .ne. 0 ) then
+          write(6,*) 'Failed at ie, ere:', ie, ere, ierr
+          return
+        endif
+        
+        ctmp = ctmp + fact * dot_product( overlaps, tmp_b )
+      endif
+      eps = 1.0_DP - ctmp
+    
+      reeps = dble( eps )
+      imeps = aimag( eps )
+      lossf = imeps / ( reeps ** 2 + imeps ** 2 )
+      refrac = sqrt(eps)
+      reflct = abs((refrac-1.0d0)/(refrac+1.0d0))**2
+      mu = 2.0d0 * ere * Hartree2eV * aimag(refrac) / ( bohr * alphainv * 1000 )
+
+      write(fh,'(8(1E24.16,1X))') ere*Hartree2eV, reeps, imeps, refrac-1.0d0, mu, reflct, lossf
+
+    enddo
+
+    deallocate( tmp_d, tmp_du, tmp_dl, tmp_b )
+  end subroutine write_val_tri
 
 end module OCEAN_haydock
