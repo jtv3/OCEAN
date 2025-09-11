@@ -50,6 +50,7 @@ module OCEAN_haydock
 
   contains
 
+
   subroutine OCEAN_haydock_pseudoHerm( sys, hay_vec, ierr )
     use AI_kinds, only : DP
     use OCEAN_energies
@@ -73,11 +74,13 @@ module OCEAN_haydock
     integer :: iter
     type( ocean_vector ) :: psi_s, psi_t, psi_r
     type( ocean_vector ) :: psi_tmp
+    logical, parameter :: flip = .true.
     
     
     real(DP), allocatable :: ReKrylovOverlaps( : ), ImKrylovOverlaps( : )
     complex(DP),allocatable :: overlaps(:)
     character( LEN = 40 ) :: abs_filename
+
 
     call OCEAN_psi_new( psi_s, ierr, hay_vec )
     if( ierr .ne. 0 ) return
@@ -95,6 +98,8 @@ module OCEAN_haydock
     call OCEAN_psi_zero_min( psi_t, ierr )
     if( ierr .ne. 0 ) return
     call OCEAN_psi_new( psi_tmp, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_zero_min( psi_tmp, ierr )
     if( ierr .ne. 0 ) return
 
     allocate( ReKrylovOverlaps( 0:haydock_niter ), ImKrylovOverlaps( 0:haydock_niter ) )
@@ -115,9 +120,10 @@ module OCEAN_haydock
     call OCEAN_energies_allow( sys, psi_t, ierr, sfact=.true.)
 
 
+    if( myid .eq. root ) write(6,*) 'Using H-Lanczos'
     call OCEAN_psi_dot( psi_s, psi_t, rb0, ierr, ib0, involution=.true. )
     if( ierr .ne. 0 ) return
-    write(6,*) rb0, ib0
+    if( myid .eq. root ) write(6,*) rb0, ib0
 
     ctmp = sqrt(cmplx(rb0,ib0,DP))
     rb0 = real(ctmp,DP)
@@ -130,6 +136,7 @@ module OCEAN_haydock
     call OCEAN_psi_divide( psi_t, ierr, rb0, ib0 )
     if( ierr .ne. 0 ) return
 
+    
     call OCEAN_psi_dot( psi_s, hay_vec, ReKrylovOverlaps( 0 ), ierr, ImKrylovOverlaps( 0 ) )
     if( ierr .ne. 0 ) return
 
@@ -141,16 +148,28 @@ module OCEAN_haydock
         if( myid .eq. root ) write(6,*)   " iter. no.", iter-1
       endif
 
+
       call OCEAN_psi_copy_min( psi_tmp, psi_t, ierr )
       call OCEAN_energies_allow( sys, psi_tmp, ierr, sfact=.true. )
-      call OCEAN_psi_dot( psi_t, psi_tmp, real_a(iter-1), ierr, imag_a(iter-1) )
-      if( ierr .ne. 0 ) return
+
+      if( flip ) then
+        call OCEAN_psi_axpy( -real_b(iter-1), psi_r, psi_t, ierr, -imag_b(iter-1))
+        if( ierr .ne. 0 ) return
+        call OCEAN_psi_dot( psi_tmp, psi_t, real_a(iter-1), ierr, imag_a(iter-1) )
+        if( ierr .ne. 0 ) return
+      else
+        call OCEAN_psi_dot( psi_t, psi_tmp, real_a(iter-1), ierr, imag_a(iter-1) )
+        if( ierr .ne. 0 ) return
+      endif
+
 
       call OCEAN_psi_axpy( -real_a(iter-1), psi_s, psi_t, ierr, -imag_a(iter-1))
       if( ierr .ne. 0 ) return
 
-      call OCEAN_psi_axpy( -real_b(iter-1), psi_r, psi_t, ierr, -imag_b(iter-1))
-      if( ierr .ne. 0 ) return
+      if( .not. flip ) then
+        call OCEAN_psi_axpy( -real_b(iter-1), psi_r, psi_t, ierr, -imag_b(iter-1))
+        if( ierr .ne. 0 ) return
+      endif
 
       call OCEAN_psi_copy_min( psi_r, psi_s, ierr )
       if( ierr .ne. 0 ) return
@@ -175,6 +194,7 @@ module OCEAN_haydock
 
       call OCEAN_psi_copy_min( psi_t, psi_tmp, ierr )
       call OCEAN_energies_allow( sys, psi_t, ierr, sfact=.true.)
+
       call OCEAN_psi_dot( psi_s, psi_t, rbtmp, ierr, ibtmp, involution=.true. )
 
       ctmp = sqrt( cmplx( rbtmp, ibtmp, DP ) )
@@ -194,9 +214,9 @@ module OCEAN_haydock
       if( ierr .ne. 0 ) return
 
       if( myid .eq. 0 ) then
-        write ( 6, '(1x,6(f20.13,2x),i6)' ) real_a(iter-1)*Hartree2eV, imag_a(iter-1) * Hartree2eV, &
-                                                      real_b(iter) * Hartree2eV, imag_b(iter) * Hartree2eV, &
-                                                      real_c(iter) * Hartree2eV, imag_c(iter) * Hartree2eV, iter
+        write ( 6, '(1x,4(f20.13,2x),i6)' ) real_a(iter-1)*Hartree2eV, imag_a(iter-1) * Hartree2eV, &
+                                                      real_b(iter) * Hartree2eV, imag_b(iter) * Hartree2eV, iter
+!                                                      real_c(iter) * Hartree2eV, imag_c(iter) * Hartree2eV, iter
         write(6,*) ReKrylovOverlaps( iter-1 ), ImKrylovOverlaps( iter-1)
       endif
     enddo
