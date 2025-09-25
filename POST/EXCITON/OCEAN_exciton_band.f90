@@ -44,7 +44,10 @@ program OCEAN_exciton_band
   read(99,*,IOSTAT=ierr) calc
   if( ierr .ne. 0 ) calc = '---'
   read(99,*,IOSTAT=ierr) efermi
-  if( ierr .ne. 0 ) have_fermi = .false.
+  if( ierr .ne. 0 ) then
+    have_fermi = .false.
+    efermi = 0.0_DP
+  endif
   close(99)
 
 
@@ -113,7 +116,7 @@ program OCEAN_exciton_band
 
   if( .not. is_core ) then
     open(unit=99,file='qinunitsofbvectors.ipt',form='formatted',status='old')
-    read(99) qinb(:)
+    read(99,*) qinb(:)
     close( 99 )
   endif
     
@@ -291,7 +294,7 @@ program OCEAN_exciton_band
   enddo
 
   if( .not. is_core) then
-    
+    k0(:) = k0(:) - real(kmesh(:),DP)*qinb(:)
     do ik = 1, kpathLength
       kpoint(:) = kpath(:,ik)
       do j = 1, 3
@@ -306,21 +309,30 @@ program OCEAN_exciton_band
     deltax = kpoint(1) - (k0(1)+dble(x0))/dble(kmesh(1))
     deltax = deltax*dble(kmesh(1))
     ! Do this after delta!
-    if( x0 .lt. 0 ) then
+    do while( x0 .lt. 0 ) 
       x0 = x0 + kmesh(1)
-    endif
+    enddo
+    do while( x0 .ge. kmesh(1) )
+      x0 = x0 - kmesh(1)
+    enddo
     y0 = floor( kmesh(2)*kpoint(2)-k0(2) )
     deltay = kpoint(2) - (k0(2)+dble(y0))/dble(kmesh(2))
     deltay = deltay*dble(kmesh(2))
-    if( y0 .lt. 0 ) then
+    do while( y0 .lt. 0 ) 
       y0 = y0 + kmesh(2)
-    endif
+    enddo
+    do while( y0 .ge. kmesh(2) )
+      y0 = y0 - kmesh(2)
+    enddo
     z0 = floor( kmesh(3)*kpoint(3)-k0(3) )
     deltaz = kpoint(3) - (k0(3)+dble(z0))/dble(kmesh(3))
     deltaz = deltaz*dble(kmesh(3))
-    if( z0 .lt. 0 ) then
+    do while( z0 .lt. 0 ) 
       z0 = z0 + kmesh(3)
-    endif
+    enddo
+    do while( z0 .ge. kmesh(3) )
+      z0 = z0 - kmesh(3)
+    enddo
 
       do iband = 1, nbval
         i = 0
@@ -357,7 +369,7 @@ program OCEAN_exciton_band
         f(2) = ff(3) + (ff(4)-ff(3))*deltay
         kpathValExciton(iband,ik,ispin) = f(1) + (f(2)-f(1))*deltax
         if( actualZero ) then
-          kpathExciton(iband,ik,ispin) = interp_poly_cut(fff, u=deltax, v=deltay, w=deltaz, cutoff=eps)
+          kpathValExciton(iband,ik,ispin) = interp_poly_cut(fff, u=deltax, v=deltay, w=deltaz, cutoff=eps)
         endif
       enddo
   
@@ -370,7 +382,7 @@ program OCEAN_exciton_band
     do iband = 1, brange(3)-1
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, 0.0_DP
+        write(99,*) klen, bandE-eFermi, 0.0_DP
       enddo
       read(98,*)
       write(99,*) ''
@@ -378,7 +390,11 @@ program OCEAN_exciton_band
     do iband = 1, nband
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, kpathExciton(iband,ik,ispin)
+        if( have_fermi ) then 
+          if( ( is_xas .and. bandE .lt. efermi ) .or. &
+              ( ( .not. is_xas ) .and. bandE .gt. efermi ) ) kpathExciton(iband,ik,ispin) = 0.0_DP
+        endif
+        write(99,*) klen, bandE-eFermi, kpathExciton(iband,ik,ispin)
       enddo
       read(98,*)
       write(99,*) ''
@@ -391,7 +407,7 @@ program OCEAN_exciton_band
     do iband = 1, brange(1)-1
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, 0.0_DP, 0.0_DP
+        write(99,*) klen, bandE-eFermi, 0.0_DP, 0.0_DP
       enddo
       read(98,*)
       write(99,*) ''
@@ -399,7 +415,8 @@ program OCEAN_exciton_band
     do iband = brange(1), brange(3)-1
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, kpathValExciton(iband-brange(1)+1,ik,ispin), 0.0_DP
+        if( have_fermi .and. ( bandE .gt. efermi ) ) kpathValExciton(iband-brange(1)+1,ik,ispin) = 0.0_DP
+        write(99,*) klen, bandE-eFermi, kpathValExciton(iband-brange(1)+1,ik,ispin), 0.0_DP
       enddo
       read(98,*)
       write(99,*) ''
@@ -407,7 +424,11 @@ program OCEAN_exciton_band
     do iband = brange(3), brange(2)
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, kpathValExciton(iband-brange(1)+1,ik,ispin), &
+        if( have_fermi ) then
+          if( bandE .gt. efermi ) kpathValExciton(iband-brange(1)+1,ik,ispin) = 0.0_DP
+          if( bandE .lt. efermi ) kpathExciton(iband-brange(3)+1,ik,ispin) = 0.0_DP
+        endif
+        write(99,*) klen, bandE-eFermi, kpathValExciton(iband-brange(1)+1,ik,ispin), &
                                  kpathExciton(iband-brange(3)+1,ik,ispin)
       enddo
       read(98,*)
@@ -416,7 +437,10 @@ program OCEAN_exciton_band
     do iband = brange(2)+1,brange(4) !brange(3)+nband-1
       do ik = 1, kpathLength
         read(98,*) klen, bandE
-        write(99,*) klen, bandE, 0.0_DP, kpathExciton(iband-brange(3)+1,ik,ispin)
+        if( have_fermi ) then
+          if( bandE .lt. efermi ) kpathExciton(iband-brange(3)+1,ik,ispin) = 0.0_DP
+        endif
+        write(99,*) klen, bandE-eFermi, 0.0_DP, kpathExciton(iband-brange(3)+1,ik,ispin)
       enddo
       read(98,*)
       write(99,*) ''
