@@ -1947,6 +1947,15 @@ sub photonq
                   - ( $hashRef->{'calc'}->{'cartesian_q'}->{'qout'}->{'direction'}[$i] 
                     * $hashRef->{'calc'}->{'cartesian_q'}->{'qout'}->{'magnitude'} );
     }
+    my $a = 0;
+    for( my $i = 0; $i < 3; $i++ ) {
+      $a += $cart_q[$i]**2;
+    }
+    $a = sqrt($a);
+    $hashRef->{'calc'}->{'cartesian_q'}->{'q'}->{'magnitude'} = $a;
+    for( my $i = 0; $i < 3; $i++ ) {
+      $hashRef->{'calc'}->{'cartesian_q'}->{'q'}->{'direction'}[$i] = $cart_q[$i]/$a;
+    }
   }
 
   my @invBRef;
