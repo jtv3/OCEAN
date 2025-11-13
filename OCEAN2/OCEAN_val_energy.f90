@@ -844,7 +844,7 @@ module OCEAN_val_energy
           write( 6, * ) 'Setting metal = true and continuing'
           metal = .true.
         endif
-        if( mod( sys%nkpts, 2 ) .ne. 0 ) then
+        if( mod( sys%nkpts * sys%nspn, 2 ) .ne. 0 .and. legacy ) then
           ierr = 80
           write( 6, * ) 'Number of kpts * number of electrons must be even for spinless calc.'
 !          goto 111
