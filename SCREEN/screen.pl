@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Copyright (C) 2010, 2013 - 2021 OCEAN collaboration
+# Copyright (C) 2010, 2013 - 2026 OCEAN collaboration
 #
 # This file is part of the OCEAN project and distributed under the terms 
 # of the University of Illinois/NCSA Open Source License. See the file 
@@ -119,14 +119,14 @@ if( -e $dataFile )
 
   my $newScreenData;
 
-  foreach my $sec (@timeSections) {
-    $newScreenData->{$sec}->{'time'} = $screenData->{$sec}->{'time'} if( exists $screenData->{$sec}->{'time'} );
-    if(  exists $screenData->{$sec}->{'time'} ) {
-      printf "%s %f\n", $sec, $screenData->{$sec}->{'time'};
-    } else {
-      printf "%s NULL\n", $sec;
-    }
-  }
+#  foreach my $sec (@timeSections) {
+#    $newScreenData->{$sec}->{'time'} = $screenData->{$sec}->{'time'} if( exists $screenData->{$sec}->{'time'} );
+#    if(  exists $screenData->{$sec}->{'time'} ) {
+#      printf "%s %f\n", $sec, $screenData->{$sec}->{'time'};
+#    } else {
+#      printf "%s NULL\n", $sec;
+#    }
+#  }
 
 
   my $fake->{ 'complete' } = JSON::PP::false;
@@ -206,7 +206,6 @@ if( -e $dataFile )
                   $newScreenData->{'model'}, [ "epsilon" ] );
   $newScreenData->{'model'}->{'time'} = $screenData->{'model'}->{'time'} if( exists $screenData->{'model'}->{'time'});
   
-  print "MODEL: " . $newScreenData->{'model'}->{'complete'} . "\n";
 
   
 #  if( $newScreenData->{'density'}->{'complete'} )
@@ -220,6 +219,7 @@ if( -e $dataFile )
   $newScreenData->{'screen'}->{'complete'} = JSON::PP::true;
   $newScreenData->{'screen'}->{'complete'} = JSON::PP::false
     unless( exists $screenData->{'screen'}->{'complete'} && $screenData->{'screen'}->{'complete'} );
+  print "No previous screening calculation detected\n" unless( $newScreenData->{'screen'}->{'complete'} );
 
   my @screenList = ( "all_augment", "augment", "convertstyle", "grid", "inversionstyle", "kmesh", 
                      "kshift", "mode", "nbands", "shells", "final" );
@@ -236,51 +236,54 @@ if( -e $dataFile )
                   $newScreenData->{'screen'}, [ 'nspin' ] );
 
   #### check to make sure OPFs didn't re-run ####
+#  print "OPF\n";
+  my %Z;
+  if( $newScreenData->{'general'}->{'mode'} eq 'core' ) {
+    foreach my $znl (@{$newScreenData->{'general'}->{'edgelist'}}) {
+      my @znl = split ' ', $znl;
+      my $z = $znl[0]*1;
+      $Z{$z} = 1;
+    }
+  } elsif( $newScreenData->{'general'}->{'mode'} eq 'grid' ) {
+    foreach (@{$newScreenData->{'structure'}->{'znucl'}}) {
+      $Z{$_} = 1;
+    }
+  }
   if( $newScreenData->{'screen'}->{'complete'} ) {
-    my %Z;
-    if( $newScreenData->{'general'}->{'mode'} eq 'core' ) {
-      foreach my $znl (@{$newScreenData->{'general'}->{'edgelist'}}) {
-        my @znl = split ' ', $znl;
-        my $z = $znl[0]*1;
-        $Z{$z} = 1;
-      }
-    } elsif( $newScreenData->{'general'}->{'mode'} eq 'grid' ) {
-      foreach (@{$newScreenData->{'structure'}->{'znucl'}}) {
-        $Z{$_} = 1;
-      }
-    }
-    if( %Z ) {
-      if( exists $screenData->{'psp'} ) {
-        foreach my $z ( keys %Z ) {
-          unless( exists $opfData->{'completed'} ) {
-            $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
-            last;
-          }
-          unless( exists $opfData->{'completed'}->{$z} &&
-                  exists $opfData->{'completed'}->{$z}->{'input_hash'} &&
-                  exists $opfData->{'completed'}->{$z}->{'psp_hash'} ) {
-            $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
-            last;
-          }
-          if( $screenData->{'psp'}->{$z}->{'input_hash'} ne $opfData->{'completed'}->{$z}->{'input_hash'} ||
-              $screenData->{'psp'}->{$z}->{'psp_hash'} ne $opfData->{'completed'}->{$z}->{'psp_hash'} ) {
-            $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
-            last;
-          }
-        }
-      } else {
-        $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
-      }
-      #Note, if someone mucks with any single psp input it'll invalidate all the screening runs regardless,
-      # but also that is an edge case
-      $newScreenData->{'psp'} = {};
+    if( exists $screenData->{'psp'} ) {
       foreach my $z ( keys %Z ) {
-        $newScreenData->{'psp'}->{$z} = {};
-        $newScreenData->{'psp'}->{$z}->{'input_hash'} = $opfData->{'completed'}->{$z}->{'input_hash'};
-        $newScreenData->{'psp'}->{$z}->{'psp_hash'} = $opfData->{'completed'}->{$z}->{'psp_hash'};
+        unless( exists $opfData->{'completed'} ) {
+          $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
+          print "OPF/opf.json missing or incomplete. Will have to re-run screening. (A)\n";
+          last;
+        }
+        unless( exists $opfData->{'completed'}->{$z} &&
+                exists $opfData->{'completed'}->{$z}->{'input_hash'} &&
+                exists $opfData->{'completed'}->{$z}->{'psp_hash'} ) {
+          $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
+          print "OPF/opf.json missing or incomplete. Will have to re-run screening. (B)\n";
+          last;
+        }
+        if( $screenData->{'psp'}->{$z}->{'input_hash'} ne $opfData->{'completed'}->{$z}->{'input_hash'} ||
+            $screenData->{'psp'}->{$z}->{'psp_hash'} ne $opfData->{'completed'}->{$z}->{'psp_hash'} ) {
+          $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
+          print "Psuedopotentials or OPF settings appear to have changed. Will have to re-run screening Z=$z\n";
+          last;
+        }
       }
+    } else {
+      $newScreenData->{'screen'}->{'complete'} = JSON::PP::false;
+      print "SCREEN was done, but OPF info not cached. Likely a bug, but will re-run screening\n";
     }
+    #Note, if someone mucks with any single psp input it'll invalidate all the screening runs regardless,
+    # but also that is an edge case
       
+  }
+  $newScreenData->{'psp'} = {};
+  foreach my $z ( keys %Z ) {
+    $newScreenData->{'psp'}->{$z} = {};
+    $newScreenData->{'psp'}->{$z}->{'input_hash'} = $opfData->{'completed'}->{$z}->{'input_hash'};
+    $newScreenData->{'psp'}->{$z}->{'psp_hash'} = $opfData->{'completed'}->{$z}->{'psp_hash'};
   }
   
 
@@ -290,8 +293,8 @@ if( -e $dataFile )
   print OUT $json->encode($newScreenData);
   close OUT;
 
-  writeExtraFiles( $newScreenData->{'structure'}, $newScreenData->{'screen'}, $newScreenData->{'general'},
-                   $newScreenData->{'model'} );
+  writeExtraFiles( $newScreenData->{'structure'}, $newScreenData->{'screen'}, $newScreenData->{'general'} );
+#                   $newScreenData->{'model'} );
 
   $newScreenData->{'combine'} = {} unless( exists $newScreenData->{'combine'} );
   $newScreenData->{'combine'}->{'complete'} = JSON::PP::true;
@@ -324,7 +327,9 @@ if( -e $dataFile )
 
   unless( $newScreenData->{'density'}->{'complete'} )
   {
+    print "Running average\n";
     my $t0 = [gettimeofday];
+    runRhoOfG( $newScreenData->{'model'} );
     my $errorCode = runDensityAverage( $newScreenData );
     if( $errorCode )
     { 
@@ -373,6 +378,7 @@ if( -e $dataFile )
 
     $newScreenData->{'screen'}->{'complete'} = JSON::PP::true;
 
+
     cleanScreen( $newScreenData->{'general'}, $newScreenData->{'screen'} );
     $newScreenData->{'screen'}->{'time'} = tv_interval( $t0 );
 
@@ -402,23 +408,6 @@ if( -e $dataFile )
     close OUT;
 
   }
-
-#  if( 0 ) {
-#  unless( $newScreenData->{'offset'}->{'complete'} )
-#  {
-#    my $t0 = [gettimeofday];
-#    print "OFFSET\n";
-#
-#    runCoreOffset( $newScreenData->{'screen'}, $newScreenData);
-#
-#    $newScreenData->{'offset'}->{'complete'} = JSON::PP::true;
-#    $newScreenData->{'offset'}->{'time'} = tv_interval( $t0 );
-#
-#    open OUT, ">", "screen.json" or die;
-#    print OUT $json->encode($newScreenData);
-#    close OUT;
-#  }
-#  }
 
   foreach my $sec (@timeSections) {
     printf "Time %s: %f\n", $sec, $newScreenData->{$sec}->{'time'};
@@ -491,8 +480,8 @@ sub buildSiteEdgeWyck
       $countByName{$structRef->{'elname'}[$structRef->{'typat'}[$i]-1]}=1;
     }
     push @index, $countByName{$structRef->{'elname'}[$structRef->{'typat'}[$i]-1]};
-    print "$structRef->{'typat'}[$i]  $structRef->{'elname'}[$structRef->{'typat'}[$i]-1]  $countByName{$structRef->{'elname'}[$structRef->{'typat'}[$i]-1]}\n";
-    print $index[$i] . "\n";
+#    print "$structRef->{'typat'}[$i]  $structRef->{'elname'}[$structRef->{'typat'}[$i]-1]  $countByName{$structRef->{'elname'}[$structRef->{'typat'}[$i]-1]}\n";
+#    print $index[$i] . "\n";
   }
 
   my %edges;
@@ -519,7 +508,7 @@ sub buildSiteEdgeWyck
 #            $structRef->{'xred'}[$key-1][1], $structRef->{'xred'}[$key-1][2];
     push @{$genRef->{'sitelist'}}, sprintf "%s %i %i", $structRef->{'elname'}[$structRef->{'typat'}[$key-1]-1],
             $structRef->{'znucl'}[$structRef->{'typat'}[$key-1]-1], $index[$key-1];
-    print "$key\n";
+#    print "$key\n";
   }
 
   my %zee;
@@ -790,7 +779,7 @@ sub grabOPF
 
 sub writeExtraFiles
 {
-  my ($structureRef, $screenRef, $genRef, $modelRef) = @_;
+  my ($structureRef, $screenRef, $genRef) = @_;
 
   open OUT, ">", "avecsinbohr.ipt" or die "Failed to open avecsinbohr.ipt\n$!";
   for( my $i = 0; $i < 3; $i++ )
@@ -895,15 +884,18 @@ sub writeExtraFiles
   print OUT ($structureRef->{'epsilon'}) . "\n";
   close OUT;
 
-  # 'screen.quadorder' 'screen.chi0integrand'  'screen.appx'
+}
+
+sub runRhoOfG
+{
+  my ($modelRef) = @_;
+
   my $rhofile = catfile( updir(), "DFT", "val.rhoofr" );
-#  unless( ! $screenRef->{'model'}->{'SLL'}->{'semicore_density'} && -e $rhofile ) {
   if( (not -e $rhofile) || $modelRef->{'SLL'}->{'semicore_density'} ) {
     $rhofile = catfile( updir(), "DFT", "rhoofr" );
   }
 
   copy( $rhofile , "rhoofr" ) or die $!;
-#  copy( catfile( updir(), "DFT", "rhoofr" ), "rhoofr" ) or die $!;
   copy( catfile( updir(), "DFT", "nfft" ), "nfft" ) or die $!;
   
   system("$ENV{'OCEAN_BIN'}/rhoofg.x") == 0  or die "Failed to run rhoofg.x\n";

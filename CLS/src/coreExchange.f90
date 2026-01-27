@@ -1,4 +1,4 @@
-! Copyright (C) 2024 OCEAN collaboration
+! Copyright (C) 2024, 2026 OCEAN collaboration
 !
 ! This file is part of the OCEAN project and distributed under the terms 
 ! of the University of Illinois/NCSA Open Source License. See the file 
@@ -15,15 +15,16 @@ program coreExchange
 
   integer :: ZZ, nc, lc, nptot, ntot, nspin, lmin, lmax, l, dumi, npt, maxll
   integer :: kgl, kgh, l1, l2, l3, l4, m1, m2, m3, m4, mk, k, ip, jp, istart
-  integer :: i, j, nu2, nu4, kmesh(3), nk, isite, iisite, nsite
+  integer :: i, j, nu2, nu3, kmesh(3), nk, isite, iisite, nsite, is, info, i2, kk, nprojmax, mkd, kkmin
   integer, allocatable :: nproj(:)
   real(DP) :: dumr, pi, su, yp( 0 : 1000 ), avecs(3,3), omega
-  real(DP), allocatable :: x(:), w(:), gk(:,:,:)
-  complex(DP) :: f1, f2, f3
-  complex(DP), allocatable :: cks(:,:,:), denMat(:,:), dmat(:,:)
+  real(DP), allocatable :: x(:), w(:), gk(:,:,:), WW(:), rwork(:), gkk(:,:,:,:,:), fkk(:,:,:,:,:)
+  complex(DP) :: f1, f2, f3, coef
+  complex(DP), allocatable :: cks(:,:,:), denMat(:,:), dmat(:,:), VXX(:,:,:), rho(:,:,:), work(:), VF2(:,:)
   logical, parameter :: yes = .true.
   logical, parameter :: no = .false.
   character(len=24) :: str
+  character(len=18) :: filnam18
   character(len=10) :: add10
   character(len=2) :: el = 'N_'
     !
@@ -78,7 +79,8 @@ program coreExchange
 !  close(99)
 
 
-  write(6,'(A2,A5,X,A14,A14,A14)') '##', 'N L site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
+!  write(6,'(A2,A5,X,A14,A14,A14)') '##', 'N L site', 'Real (eV)', 'Imag (eV)', 'Den Trace'
+  write(6,'(A2,A,X,A14,A14)') '##', "N L site m_c m'_c spin", 'Real (eV)', 'Imag (eV)'!, 'Den Trace'
   ! 
   !
 !  open(unit=99,file='edgelist',form='formatted',status='old')
@@ -112,91 +114,186 @@ program coreExchange
   read(99) cks
   close(99)
 
-  allocate(dmat(nptot,nptot))
-  dmat = 0.0_DP
-  ip = 0
-  jp = 0
-!  lmax = 0
-!  lmin = 0
-  do l = lmin, lmax
-    kgl = abs(l-lc)
-    kgh = l+lc
-    if( kgh .ge. kgl ) then
-      allocate( gk( nproj(l), nproj(l), kgl : kgh ) )
-      gk = 0.0_DP
-      do k = kgl, kgh, 2
-        write(str, '(1a2,3i1,1a10)' ) 'gk', lc, l, k, add10
-!        write(6,*) str
-        open( unit=99, file=str, form='formatted', status='old' )
-        rewind 99
-        read ( 99, * ) gk( :, :, k )
-        close(99)
-      enddo
-      l1 = lc; m1 = 0
-      l2 = l
-      l3 = l
-      l4 = lc; m4 =0
-      do m2 = -l, l
-        do nu2 = 1, nproj(l)
-          jp = jp + 1
-          do m3 = -l, l
-            mk = m1 - m3
-            istart = ip + (m3+l)
-            if ( m1 + m2 .eq. m3 + m4 ) then
-              do k = kgl, kgh, 2
-                if ( abs( mk ) .le. k ) then
-                  call threey( l1, m1, k, mk, l3, m3, no, npt, x, w, yp, f1 )
-                  call threey( l2, m2, k, mk, l4, m4, yes, npt, x, w, yp, f2 )
-!                  write(6,*) l1, m1, k, mk, l3, m3, f1
-!                  write(6,*) l2, m2, k, mk, l4, m4, f2
-                  do nu4 = 1, nproj(l)
-                    dmat(istart + nu4,jp) = dmat(istart + nu4,jp) &
-                                          + gk(nu2,nu4,k) * f1 * f2 * ( 4 * pi / ( 2 * k + 1 ) )
-                  enddo
-                endif
-              enddo
-            endif
-          enddo
+  !TODO: energies and Fermi level
+  allocate( rho( nptot, nptot, nspin ) ) 
+  rho(:,:,:) = 0.0_DP
+
+  do is = 1, nspin
+    do k = 1, ntot
+      do j = 1, nptot
+        do i = 1, nptot
+          rho(i,j,is) = rho(i,j,is) + cks(i,k,is) * conjg(cks(j,k,is))
         enddo
       enddo
-      deallocate(gk)
-    else
-      jp = jp + (2*l+1) * nproj(l)
-    endif
-    ip = ip + (2*l+1) * nproj(l)
+    enddo
   enddo
 
-  f3 = 0.0_DP
-  do i = 1, ntot
-    do j = 1, nptot
-      do k = 1, nptot
-        ! Exchange has a minus sign
-        f3 = f3 - dmat(k,j) * cks(k,i,1) * conjg(cks(j,i,1))
+! Hoist IO
+!  i = 0
+  kgl = min(lc,lmin)
+  kgh = lmax+lc
+  nprojmax = 0
+  do l = lmin, lmax
+    nprojmax = max( nprojmax, nproj(l) )
+  enddo
+  ! This is way too big, but also still very small
+  allocate( gkk( nprojmax, nprojmax, kgl:kgh, lmin:lmax, lmin:lmax ), &
+            fkk( nprojmax, nprojmax, kgl:kgh, lmin:lmax, lmin:lmax ) )
+  gkk = 0.0_DP
+  do l1 = lmin, lmax
+    do l2 = lmin, l1
+      do kk = 0, min(lc+l1,lc+l2)
+        if( ( abs(lc-l1) .gt. kk ) .or. ( abs(lc-l2) .gt. kk )  & !.or. (lc+l1 .lt. kk ) &
+            .or. ( mod(lc+l1+kk,2) .ne. 0 ) .or. ( mod(lc+l2+kk,2) .ne. 0 ) ) then
+!           .or. (lc+l2 .lt. kk ) .or. ( mod(lc+l1+kk,2) .ne. 0 ) .or. ( mod(lc+l2+kk,2) .ne. 0 ) ) then
+          cycle
+        endif
+        write ( filnam18, '(1a2,4i1,1a1,1i3.3,1a1,1i2.2,1a1,1i2.2)' ) 'gk', lc, l1, l2, kk, 'z', zz, 'n', nc, 'l', lc
+        open( unit=99, file=filnam18, form='formatted', status='old' )
+        rewind( 99 )
+        do i2 = 1, nproj(l2)
+          read ( 99, * ) gkk( 1 : nproj(1), i2, kk, l1, l2 )
+!          gkk( 1 : nproj(1), i2, kk, l2, l1 ) = gkk( 1 : nproj(1), i2, kk, l1, l2 )
+        end do
+        gkk( 1:nproj(l2), 1:nproj(l1), kk, l2, l1 ) = transpose( gkk( 1 : nproj(l1), 1:nproj(l2), kk, l1, l2 ) )
+        close( 99 )
+      enddo
+      do kk = 2, min( 2*lc, l1+l2), 2
+        if( ( abs(l1-l2) .gt. kk ) .or. mod(l1+l2,2) .ne. 0 ) then
+          cycle
+        endif
+        write ( filnam18, '(1a2,4i1,1a1,1i3.3,1a1,1i2.2,1a1,1i2.2)' ) 'fk', lc, l1, l2, kk, 'z', zz, 'n', nc, 'l', lc
+!        write(6,*) filnam18
+        open( unit=99, file=filnam18, form='formatted', status='old' )
+        rewind( 99 )
+        do i2 = 1, nproj(l2)
+          read ( 99, * ) fkk( 1 : nproj(1), i2, kk, l1, l2 )
+!          gkk( 1 : nproj(1), i2, kk, l2, l1 ) = gkk( 1 : nproj(1), i2, kk, l1, l2 )
+        end do
+        fkk( 1:nproj(l2), 1:nproj(l1), kk, l2, l1 ) = transpose( fkk( 1 : nproj(l1), 1:nproj(l2), kk, l1, l2 ) )
+        close( 99 )
+      enddo
+
+    enddo
+  enddo
+
+    
+
+    
+  allocate( VXX( -lc:lc, -lc:lc, nspin ), VF2( -lc:lc, -lc:lc) )
+  VXX = 0.0_DP
+  VF2 = 0.0_DP
+  l1 = lc
+  l4 = lc
+  do is = 1, nspin
+    do m1 = -lc, lc
+      do m4 = -lc, lc
+
+        j = 0
+        do l2 = lmin, lmax
+          do m2 = -l2, l2
+            do nu2 = 1, nproj(l2)
+              j = j + 1
+
+              i = 0
+              do l3 = lmin, lmax
+                do m3 = -l3, l3
+                  do nu3 = 1, nproj(l3) ! todo nu3
+                    i = i + 1
+
+!                   ! This is to match historical limitation in OCEAN
+!                   ! actual differences are very small
+!                    if( l2 .ne. l3 ) cycle
+                
+!                    if ( m1 + m2 .ne. m3 + m4 ) cycle
+
+
+                    if( m1 + m2 .eq. m3 + m4 ) then
+                    mk = m1 - m3
+                    coef = 0.0_DP
+  
+                    do kk = 0, min(lc+l3,lc+l2)
+                      if( ( abs(lc-l3) .gt. kk ) .or. ( abs(lc-l2) .gt. kk )  &
+                          .or. ( mod(lc+l3+kk,2) .ne. 0 ) .or. ( mod(lc+l2+kk,2) .ne. 0 ) ) then
+                        cycle
+                      endif
+                      if ( abs( mk ) .le. kk ) then
+                        call threey( l1, m1, kk, mk, l3, m3, no, npt, x, w, yp, f1 )
+                        call threey( l2, m2, kk, mk, l4, m4, yes, npt, x, w, yp, f2 )
+                        coef = coef + gkk( nu2, nu3, kk, l2, l3 ) * f1 * f2 * ( 4.0_DP * pi / real( 2 * kk + 1, DP ) )
+                      endif
+                    enddo
+
+                    VXX( m4, m1, is ) = VXX( m4, m1, is ) - coef * rho( i, j, is )
+                    endif
+
+                    if( mod( l2+l3,2 ) .eq. 0 ) then
+                      coef = 0.0_DP
+                      mkd = m4 - m1
+                      kkmin = max( 2, abs(l2-l3), abs(mkd) )
+                      if( mod( kkmin, 2 ) .ne. 0 ) kkmin = kkmin + 1
+                      do kk = kkmin, min( 2*lc, l2+l3), 2
+                        call threey( l1, m1, kk, mkd, l4, m4, yes, npt, x, w, yp, f1 )
+                        call threey( l2, m2, kk, mkd, l3, m3, yes, npt, x, w, yp, f2 )
+                        coef = coef + fkk( nu2, nu3, kk, l2, l3 ) * f1 * f2 * ( 4.0_DP * pi / real( 2 * kk + 1, DP ) )
+                      enddo
+                      VF2( m4, m1 ) = VF2( m4, m1 ) + coef * rho( i, j, is )
+                    endif
+                  enddo
+                enddo
+              enddo
+            enddo
+          enddo
+        enddo
+
+        write(6,'(A2,1X,I1.1,1X,I1.1,1X,I4.4,1X,I2,1x,I2,1x,I1,1x,F14.6,E14.6)') el, nc, lc, iisite, m4, m1, is, &
+                       real(VXX(m4,m1,is),DP)/real(nk,DP)/omega, &
+                      aimag(VXX(m4,m1,is))/real(nk,DP)/omega
+
       enddo
     enddo
   enddo
 
-  allocate(denMat(nptot, nptot) )
-  denMat(:,:) = 0.0_DP
-  su = 0.0_DP
-  do i = 1, ntot
-    do j = 1, nptot
-      do k = 1, nptot
-        denMat(k,j) = denMat(k,j) + cks(k,i,1) * conjg(cks(j,i,1)) / real(nk,DP)
-      enddo
-      su = su+ (cks(j,i,1) * conjg(cks(j,i,1))) / real(nk,DP) / omega
+  
+  
+  do m1 = -lc, lc
+    do m4 = -lc, lc
+      write(6,'(A2,1X,I1.1,1X,I1.1,1X,I4.4,1X,I2,1x,I2,1x,I1,1x,F14.6,E14.6)') el, nc, lc, iisite, m4, m1, is, &
+                     real(VF2(m4,m1),DP)/real(nk,DP)/omega, &
+                    aimag(VF2(m4,m1))/real(nk,DP)/omega
     enddo
   enddo
-!  write(6,*) 'Local den matrix trace', su
-  write(6,'(A2,1X,I1.1,1X,I1.1,1X,I4.4,1X,F14.6,E14.6,F14.6)') el, nc, lc, iisite, & 
-                                                       real(f3)/real(nk,DP)/omega, &
-                                                       aimag(f3)/real(nk,DP)/omega, su
+#if 0
+  i = 2*lc + 1
+  allocate( work( 2*i), rwork(3*i), WW(i) )
+  do is = 1, nspin
+    call ZHEEV( 'N', 'U', i, VXX(:,:,is), i, WW, work, 2*i, rwork, info )
+    write(6,*) WW(:)/real(nk,DP)/omega
+  enddo
+  deallocate( work, rwork, WW )
+#endif
+  
 
-!  do j = 1, 5
-!    write(6,*) real(denMat(1:3,j))
-!  enddo
+  write( filnam18 , '(A5,A2,A1,I2.2,A1,I2.2,A1,I4.4)') 'vexx.', el, 'n', nc, 'l', lc, '.', iisite
+  open(unit=99,file=filnam18,status='unknown',form='formatted')
+  do is = 1, nspin
+    do i = -lc, lc
+      write(99,*) VXX(:,i,is)/real(nk,DP)/omega
+    enddo
+  enddo
+  close(99)
 
-  deallocate( dmat, cks, nproj, denMat )
+  write( filnam18 , '(A4,A2,A1,I2.2,A1,I2.2,A1,I4.4)') 'vf2.', el, 'n', nc, 'l', lc, '.', iisite
+  open(unit=99,file=filnam18,status='unknown',form='formatted')
+  do i = -lc, lc
+    write(99,*) VF2(:,i)/real(nk,DP)/omega
+  enddo
+  close(99)
+
+
+  deallocate( VXX, rho, gkk, fkk, VF2)
+
+  deallocate( cks, nproj )
   enddo
 
 

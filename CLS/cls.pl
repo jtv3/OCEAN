@@ -64,6 +64,7 @@ else
 ####
 # Compatibility with older versions
 unless( exists $commonOceanData->{"cls"} ) {
+  print "FALLBACK!\n";
   $commonOceanData->{"cls"} = {};
   $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
   $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
@@ -189,7 +190,7 @@ sub runVWSum
       
       my $V = $cls->{'V'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
       my $EXX = 0;
-      if( $cod->{'do_exx'} ) {
+      if( $cod->{'cls'}->{'do_exx'} ) {
         $EXX = $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
       }
       my $W = $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad};
@@ -240,10 +241,13 @@ sub runVWSum
 sub runEXX
 {
   my ( $cod, $dft, $cls, $or ) = @_;
-  
+
   unless ( $or ) {
-    return unless( $cod->{'do_exx'} );
+    return unless( $cod->{'cls'}->{'do_exx'} );
   }
+
+
+  print "EXX\n";
 
   if( $cod->{'structure'}->{'metal'} ) {
     die "Metals not yet supported for exact exchange\n";
@@ -298,6 +302,8 @@ sub runEXX
 #        print catfile( $dirname, $file ) . "\n";
 #        $gk{ catfile( $dirname, $file ) } = 1;
         push @gk, $file;
+      } elsif( $file =~ m/^fk/ ) {
+        push @gk, $file;
       }
     }
     closedir $dir;
@@ -326,17 +332,17 @@ sub runEXX
     close OUT;
 
     system("$ENV{'OCEAN_BIN'}/corex.x > corex.log") == 0 or die "Failed to run corex.x\n$!";
-    open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";
-    <IN>;
-    foreach my $s (@runXtot) {
-      my ($el, $z, $n, $l, $j)  = split ' ', $s;
-      my $nl = sprintf "%1i%1s", $n, $spdf[$l];
-      <IN> =~ m/^(\w+\s+\d+\s+\d+\s+\d+)\s+(-?\d+\.\d+)/ or die "$_";
-      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'BSE hash'} = $dft->{'bse'}->{'hash'};
-      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'} = $2;
-      print $s . "  " . $1 . "\n";
-    } 
-    close IN;
+#    open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";
+#    <IN>;
+#    foreach my $s (@runXtot) {
+#      my ($el, $z, $n, $l, $j)  = split ' ', $s;
+#      my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+#      <IN> =~ m/^(\w+\s+\d+\s+\d+\s+\d+)\s+(-?\d+\.\d+)/ or die "$_";
+#      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'BSE hash'} = $dft->{'bse'}->{'hash'};
+#      $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'} = $2;
+#      print $s . "  " . $1 . "\n";
+#    } 
+#    close IN;
     
 
     chdir updir();
@@ -411,7 +417,7 @@ sub runVOffset
 #    writeSitelist( $screen->{'general'} );
 #    writeXYZ( $screen->{'general'} );
 
-    system("$ENV{'OCEAN_BIN'}/rhoofg.x") == 0  or die "Failed to run rhoofg.x\n";
+    system("$ENV{'OCEAN_BIN'}/rhoofg.x") == 0  or die "Failed to run rhoofg.x\n$!";
     system("wc -l rhoG2 > rhoofg") == 0 or die "$!\n";
     system("sort -n -k 6 rhoG2 >> rhoofg") == 0 or die "$!\n";
 
@@ -634,9 +640,10 @@ sub writeSitelistNew #(  $cod->{'structure'}, \@runVsite );
   my $natom = scalar @{$genRef->{'structure'}->{'typat'}};
   for ( my $i = 0; $i < $natom; $i ++ ) {
     my $t = $genRef->{'structure'}->{'typat'}[$i];
-    $siteCounter[$t] ++ ;
+    my $z = $genRef->{'structure'}->{'znucl'}[$t-1];
+    $siteCounter[$z] ++ ;
     push @output, sprintf "%2s %8i %.16g %.16g %.16g\n", $genRef->{'structure'}->{'elname'}[$t-1], 
-                $siteCounter[$t], $genRef->{'structure'}->{'xred'}[$i][0], 
+                $siteCounter[$z], $genRef->{'structure'}->{'xred'}[$i][0], 
                 $genRef->{'structure'}->{'xred'}[$i][1], $genRef->{'structure'}->{'xred'}[$i][2];
   }
 
@@ -654,10 +661,12 @@ sub indxByElement
   my @siteCounter;
   my $natom = scalar @{$genRef->{'structure'}->{'typat'}};
   for ( my $i = 0; $i < $natom; $i ++ ) {
+    # Need to de-reference back to z to account for how different spins/U/etc are done in QE
     my $t = $genRef->{'structure'}->{'typat'}[$i];
-    $siteCounter[$t] ++ ;
+    my $z = $genRef->{'structure'}->{'znucl'}[$t-1];
+    $siteCounter[$z] ++ ;
     push @indxByEl, sprintf "%2s %04i", $genRef->{'structure'}->{'elname'}[$t-1],
-                $siteCounter[$t];
+                $siteCounter[$z];
   }
 
   return @indxByEl;

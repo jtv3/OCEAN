@@ -14,7 +14,7 @@ use File::Copy;
 use strict;
 
 
-my @OceanFolders = ("Common", "DFT", "OPF", "SCREEN", "CNBSE", "PREP" );
+my @OceanFolders = ("Common", "DFT", "OPF", "SCREEN", "CNBSE", "PREP", "CLS" );
 
 print "Welcome to OCEAN\n";
 

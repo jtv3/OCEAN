@@ -159,7 +159,7 @@
       ]
    },
    "cls" : {
-      "average" : false,
+      "average" : true,
       "do_exx" : false, 
       "edge" : null,
       "enable" : false,
