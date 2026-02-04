@@ -274,6 +274,23 @@ program coreExchange
 #endif
   
 
+  ! Calculate average VXX, subtract it from the diagonal 
+  ! This separates the shift of the edge from the spin/m_l splittings
+  su = 0.0_DP
+  do is = 1, nspin
+    do m1 = -lc, lc
+      su = su + VXX(m1,m1,is)
+    enddo
+  enddo
+  su = su / real(nspin*(2*lc+1),DP)
+  do is = 1, nspin
+    do m1 = -lc, lc
+      VXX(m1,m1,is) = VXX(m1,m1,is) - su
+    enddo
+  enddo
+  su = su/(real(nk,DP)*omega)
+  write(6,'(A,X,A2,X,I3,X,I1,X,I1.1,X,I4.4,F24.16)') 'AVG', el, ZZ, nc, lc, iisite, su
+
   write( filnam18 , '(A5,A2,A1,I2.2,A1,I2.2,A1,I4.4)') 'vexx.', el, 'n', nc, 'l', lc, '.', iisite
   open(unit=99,file=filnam18,status='unknown',form='formatted')
   do is = 1, nspin

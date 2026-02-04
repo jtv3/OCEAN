@@ -332,7 +332,18 @@ sub runEXX
     close OUT;
 
     system("$ENV{'OCEAN_BIN'}/corex.x > corex.log") == 0 or die "Failed to run corex.x\n$!";
-#    open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";
+    open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";
+    while (my $line = <IN> ) {
+      if( $line =~ m/AVG\s+(\w+\s+\d+\s+\d+\s+\d+\s+\S+)\s+(-?\d+\.\d+)/ ) {
+        my $exx = $2;
+        my ($el, $z, $n, $l, $j)  = split ' ', $1;
+        my $nl = sprintf "%1i%1s", $n, $spdf[$l];
+        $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'BSE hash'} = $dft->{'bse'}->{'hash'};
+        $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'} = $exx;
+        print "##### $line\n";
+      }
+    }
+    close IN;
 #    <IN>;
 #    foreach my $s (@runXtot) {
 #      my ($el, $z, $n, $l, $j)  = split ' ', $s;
