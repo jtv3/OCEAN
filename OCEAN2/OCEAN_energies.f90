@@ -313,7 +313,7 @@ module OCEAN_energies
 
     real(DP), allocatable :: energies(:,:,:), imag_se(:,:,:)
     real(DP) :: core_offset, efermi, emin, emax
-    logical :: metal
+    logical :: metal, did_gw
 
     if( myid .eq. root ) then
       allocate( energies( sys%num_bands, sys%nkpts, sys%nspn ), &
@@ -339,11 +339,11 @@ module OCEAN_energies
     ! However, all of the other variables are bcast within each subroutine
     call read_energies( sys, energies, ierr )
 
-    call gw_corrections( sys, energies, imag_se, complex_bse, ierr )
+    call gw_corrections( sys, energies, imag_se, complex_bse, did_gw, ierr )
 
     call read_coreLevelShift( sys, core_offset, ierr )
 
-    call core_find_fermi( sys, energies, complex_bse, metal, efermi, ierr )
+    call core_find_fermi( sys, energies, did_gw, metal, efermi, ierr )
 
     call core_make_allow( sys, energies, metal, efermi )
 
@@ -711,7 +711,7 @@ module OCEAN_energies
   end subroutine read_energies
 
 
-  subroutine gw_corrections( sys, energies, imag_se, complex_bse, ierr )
+  subroutine gw_corrections( sys, energies, imag_se, complex_bse, did_gw, ierr )
     use OCEAN_system
     use OCEAN_mpi
     use OCEAN_psi
@@ -723,6 +723,7 @@ module OCEAN_energies
     real(DP), intent(inout) :: energies(:,:,:)
     real(DP), intent( out ) :: imag_se(:,:,:)
     logical, intent(inout) :: complex_bse
+    logical, intent(inout) :: did_gw
     integer, intent(inout) :: ierr
 
     real(DP), allocatable :: tmp_e0(:,:,:)
@@ -734,7 +735,7 @@ module OCEAN_energies
 
     character(len=18) ::clsFile
 
-
+    did_gw = .false.
 
     if( myid .eq. root ) then
 
@@ -749,18 +750,21 @@ module OCEAN_energies
         case ('full')
           if( myid .eq. root ) write(6,*) 'full'
           complex_bse = .true.
-          call OCEAN_abinit_fullgw( sys, energies, imag_se, ierr, .true. )
+          call OCEAN_abinit_fullgw( sys, energies, imag_se, did_gw, ierr, .true. )
         case ('real')
-          call OCEAN_abinit_fullgw( sys, energies, imag_se, ierr, .false. )
+          call OCEAN_abinit_fullgw( sys, energies, imag_se, did_gw, ierr, .false. )
         case( 'band' )
-          call OCEAN_gw_by_band( sys, energies, imag_se, ierr, .false. )
+          write(6,*) 'Band-only corrections requested'
+          call OCEAN_gw_by_band( sys, energies, imag_se, did_gw, ierr, .false. )
         case( 'ibnd' )
           complex_bse = .true.
-          call OCEAN_gw_by_band( sys, energies, imag_se, ierr, .true. )
+          call OCEAN_gw_by_band( sys, energies, imag_se, did_gw, ierr, .true. )
         case( 'cstr' )
+          ! stretch for XAS/XES maintains the position of the CBM/VBM
+          ! and so did_gw is currently necessary
           call OCEAN_gw_stretch( sys, energies, ierr )
         case( 'list' )
-          call OCEAN_gw_list( sys, energies, imag_se, ierr, .false. )
+          call OCEAN_gw_list( sys, energies, imag_se, did_gw, ierr, .false. )
         case default
           write(6,*) 'Unrecognized gw_control'
         end select
@@ -779,6 +783,8 @@ module OCEAN_energies
     endif
 
     call MPI_BCAST( complex_bse, 1, MPI_LOGICAL, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
+    call MPI_BCAST( did_gw, 1, MPI_LOGICAL, root, comm, ierr )
     if( ierr .ne. MPI_SUCCESS ) return
 #endif
 
@@ -1044,7 +1050,7 @@ module OCEAN_energies
 
   end subroutine OCEAN_gw_stretch
 
-  subroutine OCEAN_gw_list( sys, energies, imag_selfenergy, ierr, keep_imag )
+  subroutine OCEAN_gw_list( sys, energies, imag_selfenergy, did_gw, ierr, keep_imag )
     use OCEAN_system
     use OCEAN_mpi, only : myid, root
     use OCEAN_constants, only : eV2Hartree
@@ -1055,6 +1061,7 @@ module OCEAN_energies
     logical, intent( in ) :: keep_imag
     real(DP), intent( inout ) :: energies(:,:,:)
     real(DP), intent( out ) :: imag_selfenergy(:,:,:)
+    logical, intent( inout ) :: did_gw
 
     real( DP ) :: delta_gw, imag_gw
     integer :: band_max, band_loop, ikpt, iband, ispn
@@ -1085,13 +1092,14 @@ module OCEAN_energies
       enddo
       write(6,* ) 'GW: list corrections from list_val_gw.txt', sys%cur_run%num_bands
       close( 99 )
+      did_gw = .true.
     else
       write(6,* ) 'GW: list requested, but list_val_gw.txt not found!'
     endif
 
   end subroutine OCEAN_gw_list
 
-  subroutine OCEAN_gw_by_band( sys, energies, imag_selfenergy, ierr, keep_imag )
+  subroutine OCEAN_gw_by_band( sys, energies, imag_selfenergy, did_gw, ierr, keep_imag )
     use OCEAN_system
     use OCEAN_mpi, only : myid, root
     use OCEAN_constants, only : eV2Hartree
@@ -1102,10 +1110,13 @@ module OCEAN_energies
     logical, intent( in ) :: keep_imag
     real(DP), intent( inout ) :: energies(:,:,:)
     real(DP), intent( out ) :: imag_selfenergy(:,:,:)
+    logical, intent( inout ) :: did_gw
 
-    integer :: iter, ispn, kiter
+    integer :: iter, ispn, kiter, iband
+    real( DP ) :: real_se, imag_se
     real( DP ), allocatable :: re_se( : ), im_se( : )
     logical :: have_gw
+    logical :: legacy_gw
 
     if( myid .ne. root ) return
     
@@ -1118,8 +1129,74 @@ module OCEAN_energies
       write( 6, * ) 'GW corrections requested (band style).'
     endif
 
+
     allocate( re_se( sys%num_bands ), im_se( sys%num_bands ) )
+
     open(unit=99,file='GW_band.in',form='formatted',status='old')
+    rewind(99) 
+    ! legacy handler testing
+    if( keep_imag ) then
+      read(99,*,ERR=114) iband, real_se, imag_se
+    else
+      read(99,*,ERR=114) iband, real_se
+    endif
+    rewind(99)
+    ! end legacy test, deprecate and remove
+    imag_se = 0.0_DP
+    iter = 0
+    do 
+      if( keep_imag ) then
+        read(99,*,END=115) iband, real_se, imag_se
+      else
+        read(99,*,END=115) iband, real_se
+      endif
+      
+      iter = iband - sys%cur_run%start_band + 1
+      if( iter .gt. sys%num_bands ) goto 115
+      if( iter .gt. 0 ) then
+        write(6,*) iter, real_se, imag_se
+        re_se( iter ) = real_se
+        im_se( iter ) = imag_se
+      endif
+    enddo
+
+115 continue
+    close(99)
+    if( iter .lt. 1 ) then
+      write(6,*) 'WARNING! GW_band.in not parsed correctly! No GW correction has been done.'
+      deallocate( re_se, im_se )
+      return
+    endif
+
+    ! Use the same correction for all bands above where GW_band.in had info
+    if( iter .lt. sys%num_bands ) then
+      write(6,*) 'Using uniform shift for bands above ', iter
+    endif
+    do iband = min(1,iter + 1), sys%num_bands
+      write(6,*) iter, re_se( iter ), im_se( iter )
+      re_se( iband ) = re_se( iter )    
+      im_se( iband ) = im_se( iter )    
+    enddo
+      
+    re_se( : ) = re_se( : ) * eV2Hartree !/ 27.21138506_DP
+    im_se( : ) = -im_se( : ) * eV2Hartree !/ ( 27.21138506_DP ) 
+
+    do ispn = 1, sys%nspn
+      do kiter = 1, sys%nkpts
+        energies( :, kiter, ispn ) = energies( :, kiter, ispn ) + re_se( : )
+        imag_selfenergy( :, kiter, ispn ) = im_se( : )
+      enddo
+    enddo
+
+    deallocate( re_se, im_se )
+    did_gw = .true.
+    write(6,*) 'GW-by-band completed'
+
+    return
+
+114 continue
+    write(6,*) 'DEPRECATION WARNING!'
+    write(6,*) 'Format of GW_band.in should include band indices in the first column'
     rewind(99)
 
     im_se( : ) = 0.0_DP
@@ -1151,11 +1228,13 @@ module OCEAN_energies
     enddo
 
     deallocate( re_se, im_se )
+    did_gw = .true.
+    write(6,*) 'GW-by-band completed'
 
 
   end subroutine OCEAN_gw_by_band
 
-  subroutine OCEAN_abinit_fullgw( sys, energies, imag_selfenergy, ierr, keep_imag )
+  subroutine OCEAN_abinit_fullgw( sys, energies, imag_selfenergy, did_gw, ierr, keep_imag )
 ! Only run on root
     use OCEAN_system
     use OCEAN_mpi, only : myid, root
@@ -1167,6 +1246,7 @@ module OCEAN_energies
     logical, intent( in ) :: keep_imag
     real(DP), intent(inout) :: energies(:,:,:)
     real(DP), intent(out )  :: imag_selfenergy(:,:,:)
+    logical, intent(inout) :: did_gw
 
     integer :: iter, biter, kiter, ix, iy, iz, r_kiter, ibd, ispn
     integer :: num_band, gw_nkpt, gw_nspn, start_band, stop_band, skip_band
@@ -1331,7 +1411,7 @@ module OCEAN_energies
     if( .not. keep_imag ) then
       imag_selfenergy(:,:,:) = 0.0_DP
     endif 
-!    imag_selfenergy(:,:,:) = -0.014_DP
+    did_gw = .true.
 
   end subroutine OCEAN_abinit_fullgw
   
@@ -1394,7 +1474,7 @@ module OCEAN_energies
         close(99)
       endif
 
-      if( doping .or. ( didGWcorrection .and. metal ) ) then
+      if( doping .or. ( didGWcorrection  ) ) then
         overrideFermi = .true.
       endif
 
@@ -1434,8 +1514,21 @@ module OCEAN_energies
 
 
         tot_electron = tot_electron + n_electron_dope
-        homo = sorted_energies( tot_electron )
-        lumo = sorted_energies( tot_electron + 1 )
+
+        if( tot_electron .lt. 1 ) then
+          if( metal .or. ( n_electron_dope .gt. 0 ) ) then
+            ierr = 101
+            write(6,*) 'Fatal error, the energy sorting did not work'
+          endif
+          write(6,*) 'Comment: Insulator with GW correction and no band overlap.'
+          write(6,*) "         In this case the Fermi level isn't important."
+          write(6,*) "         It will be set to be below shifted LUMO"
+          lumo = sorted_energies( 1 ) - 1.0_DP
+          homo = sorted_energies( 1 ) - 1.0_DP
+        else
+          homo = sorted_energies( tot_electron )
+          lumo = sorted_energies( tot_electron + 1 )
+        endif
     
         efermi = (homo+lumo) / 2.0_dp
 

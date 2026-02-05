@@ -436,9 +436,10 @@ module OCEAN_val_energy
     real( DP ), intent( inout ), optional, &
       dimension( sys%brange(3) : sys%brange(4), sys%nkpts, sys%nspn, sys%nbw ) :: im_con_energies
     !
-    integer :: nbands, iter, ispn, ikpt, ibw
+    integer :: nbands, iter, ispn, ikpt, ibw, iband, ios, i, istart
+    real( DP ) :: real_se, imag_se
     real( DP ), allocatable, dimension(:) :: re_se, im_se
-    logical :: have_gw
+    logical :: have_gw, foundAllBands
     !
     inquire(file='GW_band.in',exist=have_gw)
     if( .not. have_gw ) then
@@ -448,19 +449,65 @@ module OCEAN_val_energy
     endif
 
     open(unit=99,file='GW_band.in',form='formatted',status='old')
-    rewind(99)
-    read(99,*) nbands
-    allocate( re_se( nbands ), im_se( nbands ) )
     if( keep_imag ) then
-      write(6,*) 'Reading IMAG'
-      do iter = 1, nbands
-        read(99,*) re_se( iter ), im_se( iter )
-      enddo
+      read(99,*,IOSTAT=ios) iband, real_se, imag_se
     else
-      do iter = 1, nbands
-        read(99,*) re_se( iter )
+      read(99,*,IOSTAT=ios) iband, real_se
+      imag_se = 0.0_DP
+    endif
+    if( ios .eq. 0 ) then
+
+      foundAllBands = .false.
+      allocate( re_se( sys%brange(1):sys%brange(4) ), im_se( sys%brange(1):sys%brange(4) ) )
+      do i = sys%brange(1), iband
+        re_se( i ) = real_se
+        im_se( i ) = imag_se
       enddo
-      im_se( : ) = 0.0_DP
+      istart = iband+1
+      do i = istart, sys%brange(4)
+        if( keep_imag ) then
+          read(99,*,END=114) iband, real_se, imag_se
+        else
+          read(99,*,END=114) iband, real_se
+        endif
+        if( i .ne. iband ) then
+          write(6,*) 'GW_band.in skipped some bands!'
+          write(6,*) 'Fix GW_band.in to continue'
+          ierr = 991
+          return
+        endif
+        re_se(iband) = real_se
+        im_se(iband) = imag_se
+      enddo
+      foundAllBands = .true.
+  114 continue
+      if( .not. foundAllBands ) then
+        istart = i - 1
+        write(6,*) '  Band correction ran out of bands', istart, sys%brange(4)
+        do i = istart, sys%brange(4)
+          re_se(i) = re_se(istart)
+          im_se(i) = im_se(istart)
+        enddo
+      endif
+      nbands = sys%brange(4)
+    
+    else !! legacy
+      write(6,*) 'This format for GW_bands.in is deprecated and will be removed'
+
+      rewind(99)
+      read(99,*) nbands
+      allocate( re_se( nbands ), im_se( nbands ) )
+      if( keep_imag ) then
+        write(6,*) 'Reading IMAG'
+        do iter = 1, nbands
+          read(99,*) re_se( iter ), im_se( iter )
+        enddo
+      else
+        do iter = 1, nbands
+          read(99,*) re_se( iter )
+        enddo
+        im_se( : ) = 0.0_DP
+      endif
     endif
     close( 99 )
 

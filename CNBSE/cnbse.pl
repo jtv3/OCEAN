@@ -1231,6 +1231,10 @@ sub writeValAuxFiles {
     printf OUT "%g %g\n", $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'vstr'}, 
                           $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'cstr'};
     close OUT;
+  } else {
+    open OUT, ">", "gw_control" or die "Failed to open gw_control\n$!";
+    print OUT $hashRef->{'bse'}->{'val'}->{'gw'}->{'control'} . "\n";
+    close OUT;
   }
     
   open OUT, ">", "decut" or die "Failed to open decut\n$!";
