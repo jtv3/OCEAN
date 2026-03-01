@@ -148,7 +148,11 @@ program coreExchange
 !           .or. (lc+l2 .lt. kk ) .or. ( mod(lc+l1+kk,2) .ne. 0 ) .or. ( mod(lc+l2+kk,2) .ne. 0 ) ) then
           cycle
         endif
-        write ( filnam18, '(1a2,4i1,1a1,1i3.3,1a1,1i2.2,1a1,1i2.2)' ) 'gk', lc, l1, l2, kk, 'z', zz, 'n', nc, 'l', lc
+        if( l1 .eq. l2 ) then
+          write ( filnam18, '(1a2,3i1,1a1,1i3.3,1a1,1i2.2,1a1,1i2.2)' ) 'gk', lc, l1, kk, 'z', zz, 'n', nc, 'l', lc
+        else
+          write ( filnam18, '(1a2,4i1,1a1,1i3.3,1a1,1i2.2,1a1,1i2.2)' ) 'gk', lc, l1, l2, kk, 'z', zz, 'n', nc, 'l', lc
+        endif
         open( unit=99, file=filnam18, form='formatted', status='old' )
         rewind( 99 )
         do i2 = 1, nproj(l2)

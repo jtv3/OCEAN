@@ -68,8 +68,9 @@ unless( exists $commonOceanData->{"cls"} ) {
   $commonOceanData->{"cls"} = {};
   $commonOceanData->{"cls"}->{'enable'} = $commonOceanData->{"screen"}->{"core_offset"}->{"enable"};
   $commonOceanData->{"cls"}->{'average'} = $commonOceanData->{"screen"}->{"core_offset"}->{"average"};
-  $commonOceanData->{"cls"}->{'energy'} = $commonOceanData->{"screen"}->{"core_offset"}->{"energy"};
+  $commonOceanData->{"cls"}->{'energy'} = [$commonOceanData->{"screen"}->{"core_offset"}->{"energy"}];
   $override = 1 if( $override == 0 );
+  $commonOceanData->{"cls"}->{'do_exx'} = JSON::PP::true;
 } 
 ####
 # Early exit if not core-level calculation
@@ -160,7 +161,7 @@ sub runVWSum
   # OCEAN input file, but this is not yet done
   unless( $cod->{'cls'}->{'average'} ) {
     foreach my $znl (keys %ZNL ) {
-      $ZNL{ $znl } = $cod->{'cls'}->{'energy'};
+      $ZNL{ $znl } = $cod->{'cls'}->{'energy'}[0];
     }
   }
 
@@ -177,8 +178,8 @@ sub runVWSum
   my @ibe = indxByElement( $cod );
   foreach my $rad (@shells) {
     printf OUT "Radius = %.2f Bohr\n", $rad;
-    print OUT "Site index    New potential   new1/2 Screening   core_offset       total offset\n";
-    print OUT "                  (eV)             (eV)              (eV)              (eV)\n";
+    print OUT "Site index    New potential   new1/2 Screening       EXX            core_offset       total offset\n";
+    print OUT "                  (eV)             (eV)              (eV)              (eV)               (eV)\n";
     my %avg;
     my %count;
     foreach my $site (@{$cod->{'calc'}->{'edges'}}) {
@@ -220,10 +221,14 @@ sub runVWSum
       if( $cod->{'cls'}->{'average'} ) {
         $ZNL{ $znl } = ($avg{ $znl })/($count{ $znl });
       }
+      my $EXX = 0;
+      if( $cod->{'cls'}->{'do_exx'} ) {
+        $EXX = $cls->{'EXX'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'};
+      }
       $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad} -= $ZNL{ $znl };
-      printf OUT  "   %7i   %16.9f  %15.9f  %15.9f  %16.7f\n", $j, 
+      printf OUT  "   %7i   %16.9f  %15.9f  %15.9f  %15.9f %16.7f\n", $j, 
                   $cls->{'V'}->{'edge'}->{$el}->{$j}->{$nl}->{'pot'}*$Ry2eV, 
-                  $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad}*$Ry2eV,
+                  $cls->{'W'}->{$el}->{$j}->{$nl}->{'pot'}->{$rad}*$Ry2eV, $EXX,
                   $ZNL{ $znl }, $cls->{'total'}->{$el}->{$j}->{$nl}->{$rad};
                   
     }

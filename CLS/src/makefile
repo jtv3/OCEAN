@@ -12,7 +12,7 @@ OBJS = newthreey.o newgetprefs.o newgetylm.o getomega.o
 all: corex.x corescreen.x
 
 coreScreen.o: coreScreen.f90
-	$(FC) $(OPTIONS) -c -o coreSCreen.o coreScreen.f90 -I../../Modules
+	$(FC) $(OPTIONS) -c -o coreScreen.o coreScreen.f90 -I../../Modules
 
 corescreen.x: coreScreen.o
 	$(FC) $(OPTIONS) $(LDFLAGS) -o corescreen.x coreScreen.o -I../../Modules
