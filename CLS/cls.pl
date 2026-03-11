@@ -254,9 +254,8 @@ sub runEXX
 
   print "EXX\n";
 
-  if( $cod->{'structure'}->{'metal'} ) {
-    die "Metals not yet supported for exact exchange\n";
-  }
+#  if( $cod->{'structure'}->{'metal'} ) {
+#  }
 
   $cls->{'EXX'} = {} unless exists $cls->{'EXX'};
   $cls->{'EXX'}->{'edge'} = {} unless exists $cls->{'EXX'}->{'edge'};
@@ -335,6 +334,13 @@ sub runEXX
       print OUT "$s\n";
     }
     close OUT;
+    if( $cod->{'structure'}->{'metal'} ) {
+      copy catfile( updir(), updir(), 'PREP', 'BSE', "efermiinrydberg.ipt" ), "efermiinrydberg.ipt" or die "$!";
+      copy catfile( updir(), updir(), 'PREP', 'BSE', "enkfile" ), "enkfile" or die "$!";
+      copy catfile( updir(), updir(), 'PREP', 'BSE', "brange.ipt" ), "brange.ipt" or die "$!";
+      copy catfile( updir(), updir(), 'PREP', 'BSE', "nspin" ), "nspin" or die "$!";
+#      die "Metals not yet supported for exact exchange\n";
+    }
 
     system("$ENV{'OCEAN_BIN'}/corex.x > corex.log") == 0 or die "Failed to run corex.x\n$!";
     open IN, "<", "corex.log" or die "Failed to open corex.log\n$!";

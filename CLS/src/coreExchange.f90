@@ -13,12 +13,12 @@ program coreExchange
   implicit none
 
 
-  integer :: ZZ, nc, lc, nptot, ntot, nspin, lmin, lmax, l, dumi, npt, maxll
-  integer :: kgl, kgh, l1, l2, l3, l4, m1, m2, m3, m4, mk, k, ip, jp, istart
+  integer :: ZZ, nc, lc, nptot, ntot, nspin, lmin, lmax, l, dumi, npt, maxll, ik, iks, nband, nspin2, ib
+  integer :: kgl, kgh, l1, l2, l3, l4, m1, m2, m3, m4, mk, k, ip, jp, istart, brange(4)
   integer :: i, j, nu2, nu3, kmesh(3), nk, isite, iisite, nsite, is, info, i2, kk, nprojmax, mkd, kkmin
   integer, allocatable :: nproj(:)
-  real(DP) :: dumr, pi, su, yp( 0 : 1000 ), avecs(3,3), omega
-  real(DP), allocatable :: x(:), w(:), gk(:,:,:), WW(:), rwork(:), gkk(:,:,:,:,:), fkk(:,:,:,:,:)
+  real(DP) :: dumr, pi, su, yp( 0 : 1000 ), avecs(3,3), omega, efermi
+  real(DP), allocatable :: x(:), w(:), gk(:,:,:), WW(:), rwork(:), gkk(:,:,:,:,:), fkk(:,:,:,:,:), enk(:,:), enkskip(:)
   complex(DP) :: f1, f2, f3, coef
   complex(DP), allocatable :: cks(:,:,:), denMat(:,:), dmat(:,:), VXX(:,:,:), rho(:,:,:), work(:), VF2(:,:)
   logical, parameter :: yes = .true.
@@ -27,6 +27,7 @@ program coreExchange
   character(len=18) :: filnam18
   character(len=10) :: add10
   character(len=2) :: el = 'N_'
+  logical :: metal
     !
   include 'sphsetnx.h.f90'
   !
@@ -59,6 +60,32 @@ program coreExchange
   read(99,*) avecs(:,:)
   close(99)
   call getomega( avecs, omega )
+
+  inquire( file='efermiinrydberg.ipt', exist=metal )
+  if( metal ) then
+    open(unit=99,file='efermiinrydberg.ipt',form='formatted',status='old')
+    read(99,*) efermi
+    close(99)
+
+    open(unit=99,file='nspin',form='formatted',status='old')
+    read(99,*) nspin2
+    close(99)
+
+
+    open(unit=99,file='brange.ipt', form='formatted',status='old')
+    read(99,*) brange(:)
+    close(99)
+    nband = brange(2) - brange(1) + 1
+    allocate( enk(nband,nk*nspin2), enkskip(brange(3):brange(4) ) )
+    open(unit=99,file='enkfile',form='formatted',status='old')
+    do i = 1, nk*nspin2
+      read(99,*) enk(:,i)
+      read(99,*) enkskip(:)
+    enddo
+    close(99)
+  endif
+    
+
 
 
 !  open(unit=99,file='ZNL',form='formatted',status='old')
@@ -114,19 +141,48 @@ program coreExchange
   read(99) cks
   close(99)
 
-  !TODO: energies and Fermi level
   allocate( rho( nptot, nptot, nspin ) ) 
   rho(:,:,:) = 0.0_DP
 
-  do is = 1, nspin
-    do k = 1, ntot
-      do j = 1, nptot
-        do i = 1, nptot
-          rho(i,j,is) = rho(i,j,is) + cks(i,k,is) * conjg(cks(j,k,is))
+  
+  if( metal ) then
+    if( nspin .ne. nspin2 ) then
+      write(6,*) "parcks and nspin.ipt don't agree"
+      stop
+    endif
+    if( ntot .ne. nk*nband ) then
+      write(6,*) "parcks and bands*kpts don't agree"
+      stop
+    endif
+
+    iks = 0
+    do is = 1, nspin
+      k = 0
+      do ik = 1, nk
+        iks = iks + 1
+        do ib = 1, nband
+          k = k + 1
+          if( enk( ib, iks ) .le. efermi ) then
+            do j = 1, nptot
+              do i = 1, nptot
+                rho(i,j,is) = rho(i,j,is) + cks(i,k,is) * conjg(cks(j,k,is))
+              enddo
+            enddo
+          endif
         enddo
       enddo
     enddo
-  enddo
+  else
+    do is = 1, nspin
+      do k = 1, ntot
+        do j = 1, nptot
+          do i = 1, nptot
+            rho(i,j,is) = rho(i,j,is) + cks(i,k,is) * conjg(cks(j,k,is))
+          enddo
+        enddo
+      enddo
+    enddo
+  endif
 
 ! Hoist IO
 !  i = 0
@@ -156,7 +212,7 @@ program coreExchange
         open( unit=99, file=filnam18, form='formatted', status='old' )
         rewind( 99 )
         do i2 = 1, nproj(l2)
-          read ( 99, * ) gkk( 1 : nproj(1), i2, kk, l1, l2 )
+          read ( 99, * ) gkk( 1 : nproj(l1), i2, kk, l1, l2 )
 !          gkk( 1 : nproj(1), i2, kk, l2, l1 ) = gkk( 1 : nproj(1), i2, kk, l1, l2 )
         end do
         gkk( 1:nproj(l2), 1:nproj(l1), kk, l2, l1 ) = transpose( gkk( 1 : nproj(l1), 1:nproj(l2), kk, l1, l2 ) )
