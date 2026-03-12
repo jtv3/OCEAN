@@ -222,7 +222,7 @@ if( -e $dataFile )
   print "No previous screening calculation detected\n" unless( $newScreenData->{'screen'}->{'complete'} );
 
   my @screenList = ( "all_augment", "augment", "convertstyle", "grid", "inversionstyle", "kmesh", 
-                     "kshift", "mode", "nbands", "shells", "final" );
+                     "kshift", "mode", "nbands", "shells", "final", "vext" );
   copyAndCompare( $newScreenData->{'screen'}, $commonOceanData->{'screen'}, $screenData->{'screen'},
                   $newScreenData->{'screen'}, \@screenList );
 
@@ -880,6 +880,10 @@ sub writeExtraFiles
   print OUT ($screenRef->{'final'}->{'dr'}) . "\n";
   close OUT;
 
+  open OUT, ">", "screen.vext" or die $!;
+  print OUT $screenRef->{'vext'} . "\n";
+  close OUT;
+
   open OUT, ">", "epsilon" or die $!;
   print OUT ($structureRef->{'epsilon'}) . "\n";
   close OUT;
@@ -1143,6 +1147,7 @@ sub finishCorePotentials
   # This allows us to loop over these three potentials and read them into their 
   #  own hash locations using the same code
   my %potTypes = ( 'vc_bare' => \%vc_bare, 'vpseud1' => \%vpseud1, 'vvallel' => \%vvallel );
+  if( $screenHash->{ "augment" } ) { %potTypes = ( 'vc_bare' => \%vc_bare ); }
   foreach my $edgeEntry (@{$genHash->{'edgelist'}})
   {
     print "$edgeEntry\n";

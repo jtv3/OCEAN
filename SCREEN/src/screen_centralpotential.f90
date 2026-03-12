@@ -420,6 +420,7 @@ module screen_centralPotential
   end subroutine screen_centralPotential_newScreenShell
 
   subroutine screen_centralPotential_load( z, n, l, pot, ierr )
+    use screen_system, only : screen_system_vext
     integer, intent( in ) :: z, n, l
     type( potential ), intent( out ) :: pot
     integer, intent( inout ) :: ierr
@@ -428,6 +429,7 @@ module screen_centralPotential
     integer :: maxLength, curLength, fh
 
     character(len=26) :: fileName
+    character(len=7) :: vext
 
     pot%z = z
     pot%n = n
@@ -448,7 +450,8 @@ module screen_centralPotential
 #endif 
     endif
 
-    write(fileName,'(A17,I3.3,A1,I2.2,A1,I2.2)') 'zpawinfo/vc_barez', z, 'n', n, 'l', l
+    vext = screen_system_vext()
+    write(fileName,'(A9,A7,A1,I3.3,A1,I2.2,A1,I2.2)') 'zpawinfo/', vext, 'z', z, 'n', n, 'l', l
     fh = 99
     open( unit=fh, file=fileName, form='formatted', status='old', iostat=ierr )
     if( ierr .ne. 0 ) then
