@@ -227,6 +227,8 @@ foreach my $i (@inputFile)
 }
 
 my %inputHash;
+my @inputOrder;
+my %seenRawKey;
 my $i = 0;
 my $tag = 1;
 my $curly = 0;
@@ -242,6 +244,12 @@ while( $i < scalar @inputFile )
 #    print "$inputFile[$i] >>>> ";
     $tag = 0;
     $key = $inputFile[$i];
+    if( exists $seenRawKey{ $key } )
+    {
+      die "Duplicate input flag: $key\n";
+    }
+    $seenRawKey{ $key } = 1;
+    push @inputOrder, $key;
     $val = '';
     $errorBuffer = '';
     $errorBuffer .= $inputFile[$i-1] . "\n" if( $i > 0 );
@@ -290,24 +298,17 @@ my $haveLegacy = 0;
 my $haveLegacyCorePlot = 0;
 my $haveLegacyValPlot = 0;
 
-INPUT: foreach my $key ( keys %inputHash ) 
+INPUT: foreach my $key ( @inputOrder ) 
 {
-  my @newKey = split /\./, $key;
-  my $ref = $config;
-  for( my $i = 0; $i < scalar @newKey; $i++ )
-  {
-    if( exists $ref->{$newKey[$i]} )
-    {
-      $ref = $ref->{$newKey[$i]};
-    }
-    else
-    {
-      $haveLegacy = 1;
-      print "Unrecognized input flag: $key\n  Attempting legacy conversion\n";
-      last INPUT;
-    }
+  unless( findInputKey( $config, $key ) )
+  { 
+    $haveLegacy = 1;
+    print "Unrecognized input flag: $key\n  Attempting legacy conversion\n";
+    last INPUT;
   }
 }
+
+my %seenInputKey;
 
 if( $haveLegacy == 1 )
 {
@@ -323,13 +324,19 @@ if( $haveLegacy == 1 )
       print "  " .$inputHash{ 'ppdir' } . "\n";
     }
   }
-  foreach my $key ( keys %inputHash )
+  foreach my $key ( @inputOrder )
   {
     my $lckey = lc($key);
 #    $key = lc($key) unless( exists $decoder{$key} );
 #    die "Unrecognized input flag: $key\n No recovery possible!" unless( exists $decoder{$lckey} );
     if( exists $decoder{$lckey} ) {
       my $newKey = $decoder{ $lckey };
+      if( exists $seenInputKey{ $newKey } )
+      {
+        die "Duplicate input after legacy conversion: " 
+          . $seenInputKey{ $newKey } . " and $key both set $newKey\n";
+      }
+      $seenInputKey{ $newKey } = $key;
       print "$key : $newKey  $inputHash{ $key }\n";
       $inputHash{ $newKey } = $inputHash{ $key };
       delete( $inputHash{ $key } ) unless( $key eq $newKey );
@@ -354,19 +361,16 @@ if( $haveLegacy == 1 )
         $haveLegacyValPlot = 1;
       }
     } else {
-      my @newKey = split /\./, $key;
-      my $ref = $config;
-      for( my $i = 0; $i < scalar @newKey; $i++ )
+      unless( findInputKey( $config, $key ) )
       {
-        if( exists $ref->{$newKey[$i]} )
-        {
-          $ref = $ref->{$newKey[$i]};
-        }
-        else
-        {
-          die "Unsupported input flag. Neither new nor legacy:  $key\n";
-        }
+        die "Unsupported input flag. Neither new nor legacy:  $key\n";
       }
+      if( exists $seenInputKey{ $key } )
+      {
+        die "Duplicate input after legacy conversion: " 
+          . $seenInputKey{ $key } . " and $key both set $key\n";
+      }
+      $seenInputKey{ $key } = $key;
       print "Comment: Mixed new and legacy input:  $key\n";
     }
   }
@@ -536,3 +540,18 @@ close OUT;
 open OUT, ">", "calc" or die;
 print OUT $config->{'calc'}->{'mode'} . "\n";
 close OUT;
+
+
+
+sub findInputKey
+{
+  my ($config, $key) = @_;
+  my @newKey = split /\./, $key;
+  my $ref = $config;
+  for( my $i = 0; $i < scalar @newKey; $i++ )
+  {
+    return 0 unless( ref( $ref ) eq 'HASH' && exists $ref->{$newKey[$i]} );
+    $ref = $ref->{$newKey[$i]};
+  }
+  return 1;
+}
