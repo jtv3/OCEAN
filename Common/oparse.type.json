@@ -85,7 +85,7 @@
                "spacing" : "i", 
                "thresh" : "f"
             },
-            "niter" : "ii"
+            "niter" : "i"
          },
          "lflag" : "b",
          "plot" : {

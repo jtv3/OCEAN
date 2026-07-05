@@ -165,7 +165,7 @@
    "dft" : {
       "abpad" : 4,
       "bse" : {
-         "diagonalization" : "ppcg",
+         "diagonalization" : "davidson",
          "poolsize" : -1,
          "split" : true,
          "toldfe" : -1
@@ -225,7 +225,7 @@
       "program" : "abi",
       "redirect" : false,
       "screen" : {
-         "diagonalization" : "ppcg",
+         "diagonalization" : "davidson",
          "poolsize" : -1,
          "toldfe" : -1
       },
