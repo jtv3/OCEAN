@@ -404,8 +404,16 @@ foreach my $key ( keys %inputHash )
   }
 
   my $regex;
-  $regex = '^(-?\d+)' if( $type =~ m/i/ );
-  $regex = '^(-?\d*\.?\d+([eEdD][+-]?\d+)?)' if( $type =~ m/f/ );
+  $regex = '^\s*(-?\d+)\s*$' if( $type =~ m/i/ );
+  # Full-token floating point match:
+  #   ^\s* and \s*$ allow only optional leading/trailing whitespace.
+  #   -? allows an optional minus sign.
+  #   (?:\d+(?:\.\d*)?|\.\d+) accepts either digits with an optional decimal
+  #     point and optional following digits, or a leading decimal point followed
+  #     by digits. This allows 1, 1., 1.0, and .1, but rejects bare ".".
+  #   (?:[eEdD][+-]?\d+)? accepts an optional Fortran/C exponent with e, E, d,
+  #     or D, an optional sign, and at least one exponent digit.
+  $regex = '^\s*(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?)\s*$' if( $type =~ m/f/ );
   $regex = '^([\w\S\s]+)$' if ( $type =~ m/s|S/ );
 
 
@@ -490,11 +498,14 @@ foreach my $key ( keys %inputHash )
     # end fix  
     if( $type =~ m/b/ )
     {
-      if( $value =~ m/t|true|1/i )
+      my $boolValue = lc $value;
+      if( $boolValue eq 't' || $boolValue eq 'true' || $boolValue eq '.t.'
+          || $boolValue eq '.true.' || $boolValue eq '1' )
       {
         $value = $JSON::PP::true
       }
-      elsif( $value =~ m/f|false|0/i )
+      elsif( $boolValue eq 'f' || $boolValue eq 'false' || $boolValue eq '.f.'
+             || $boolValue eq '.false.' || $boolValue eq '0' )
       {
         $value = $JSON::PP::false
       }
@@ -508,7 +519,7 @@ foreach my $key ( keys %inputHash )
       if( $value =~ m/$regex/ )
       {
         $value = $1;
-        $value =~ s/d/e/ if( $type =~ m/f/ );
+        $value =~ s/[dD]/e/ if( $type =~ m/f/ );
         $value *= 1 if( $type =~ m/[if]/ );
         $value = lc $value if( $type =~ m/s/ );
       }
