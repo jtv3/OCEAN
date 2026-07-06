@@ -345,7 +345,11 @@ if( $haveLegacy == 1 )
       $rawInputFile =~ s/$key/$newKey/;
       my @newKey = split /\./, $newKey;
       my $ref = $config;
-      next if( $newKey[0] eq 'nope' );
+      if( $newKey[0] eq 'nope' )
+      {
+        print "WARNING: Ignoring recognized legacy input flag: $key ($newKey)\n";
+        next;
+      }
       for( my $i = 0; $i < scalar @newKey; $i++ )
       {
         if( exists $ref->{$newKey[$i]} )
