@@ -215,7 +215,7 @@
    "psp" : {
       "ecut_quality" : "s",
       "pp_database" : "S",
-      "pp_list" : "aS",
+      "pp_list" : "aS:lenmatch=structure.znucl",
       "ppdir" : "S",
       "source" : "s"
    },
@@ -266,10 +266,10 @@
       "rprim" : "af:len=9",
       "rscale" : "af:len=3",
       "typat" : "ai",
-      "xangst" : "af",
-      "xbohr" : "af",
-      "xred" : "af",
+      "xangst" : "af:oneof=structure.coords,lenmul=3*structure.typat",
+      "xbohr" : "af:oneof=structure.coords,lenmul=3*structure.typat",
+      "xred" : "af:oneof=structure.coords,lenmul=3*structure.typat",
       "znucl" : "ai",
-      "zsymb" : "as"
+      "zsymb" : "as:lenmatch=structure.znucl"
    }
 }

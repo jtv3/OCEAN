@@ -385,12 +385,14 @@ if( $haveLegacy == 1 )
 
 print "Storing parsed data\n\n";
 # If we made it here all the keys are valid
+my %suppliedInputKey;
 foreach my $key ( keys %inputHash )
 {
   my $value = $inputHash{ $key };
   print "$key $value\n";
   my @newKey = split /\./, $key;
   next if( $newKey[0] eq 'nope' );
+  $suppliedInputKey{ $key } = 1;
 
 
   my $type = $typeDef;
@@ -536,6 +538,8 @@ foreach my $key ( keys %inputHash )
   }
 }
 
+validateRelationalArrayLengths( $config, $typeDef, \%suppliedInputKey );
+
 my $enable = 1;
 $json->canonical([$enable]);
 $json->pretty([$enable]);
@@ -600,6 +604,22 @@ sub parseTypeSpec
         die "Invalid signlen constraint '$constraint' in $type\n"
           if( $name eq 'signlen' && $value == 0 );
         $constraints{$name} = $value * 1;
+      }
+      elsif( $name eq 'oneof' || $name eq 'lenmatch' )
+      {
+        die "$name constraint '$constraint' in $type requires an array type\n"
+          unless( $baseType =~ m/a/ );
+        $value =~ m/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/
+          or die "Invalid path type constraint '$constraint' in $type\n";
+        $constraints{$name} = $value;
+      }
+      elsif( $name eq 'lenmul' )
+      {
+        die "$name constraint '$constraint' in $type requires an array type\n"
+          unless( $baseType =~ m/a/ );
+        $value =~ m/^[1-9]\d*\*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/
+          or die "Invalid lenmul type constraint '$constraint' in $type\n";
+        $constraints{$name} = $value;
       }
       else
       {
@@ -666,6 +686,102 @@ sub validateArrayLength
     else
     {
       die "Invalid array length for $key: first value is zero, expected positive or negative first value ($type)\n";
+    }
+  }
+}
+
+
+# Fetch a dot-separated path from the final config tree.
+sub getConfigValue
+{
+  my ($config, $key) = @_;
+  my @path = split /\./, $key;
+  my $ref = $config;
+  foreach my $part ( @path )
+  {
+    return undef unless( ref( $ref ) eq 'HASH' && exists $ref->{$part} );
+    $ref = $ref->{$part};
+  }
+  return $ref;
+}
+
+
+# Gather constraints that need final config values instead of one raw input array.
+sub collectRelationalArrayConstraints
+{
+  my ($typeRef, $prefix, $oneOfRef, $checksRef) = @_;
+
+  if( ref( $typeRef ) eq 'HASH' )
+  {
+    foreach my $key ( sort keys %$typeRef )
+    {
+      my $newPrefix = length $prefix ? "$prefix.$key" : $key;
+      collectRelationalArrayConstraints( $typeRef->{$key}, $newPrefix, $oneOfRef, $checksRef );
+    }
+  }
+  else
+  {
+    my (undef, $constraints) = parseTypeSpec( $typeRef );
+    push @{ $oneOfRef->{ $constraints->{'oneof'} } }, $prefix
+      if( exists $constraints->{'oneof'} );
+    push @$checksRef, { key => $prefix, type => $typeRef, constraints => $constraints }
+      if( exists $constraints->{'lenmul'} || exists $constraints->{'lenmatch'} );
+  }
+}
+
+
+# Enforce relational constraints after all supplied values have been assigned.
+# This keeps checks independent of the order in the user's input file.
+sub validateRelationalArrayLengths
+{
+  my ($config, $typeDef, $suppliedRef) = @_;
+  my %oneOf;
+  my @checks;
+
+  collectRelationalArrayConstraints( $typeDef, '', \%oneOf, \@checks );
+
+  foreach my $group ( sort keys %oneOf )
+  {
+    my @members = @{ $oneOf{$group} };
+    my @supplied = grep { exists $suppliedRef->{$_} } @members;
+    die "Invalid array selection for $group: got " . scalar @supplied
+      . " supplied inputs, expected exactly one of " . join( ', ', @members ) . "\n"
+      unless( scalar @supplied == 1 );
+  }
+
+  foreach my $check ( @checks )
+  {
+    my $key = $check->{'key'};
+    next unless( exists $suppliedRef->{$key} );
+
+    my $value = getConfigValue( $config, $key );
+    die "Invalid array length for $key: final value is missing or not an array ($check->{'type'})\n"
+      unless( ref( $value ) eq 'ARRAY' );
+    my $length = scalar @$value;
+
+    if( exists $check->{'constraints'}->{'lenmul'} )
+    {
+      my $rule = $check->{'constraints'}->{'lenmul'};
+      $rule =~ m/^([1-9]\d*)\*(.+)$/;
+      my $multiplier = $1;
+      my $refKey = $2;
+      my $refValue = getConfigValue( $config, $refKey );
+      die "Invalid array length for $key: reference $refKey is missing or not an array ($check->{'type'})\n"
+        unless( ref( $refValue ) eq 'ARRAY' );
+      my $expected = $multiplier * scalar @$refValue;
+      die "Invalid array length for $key: got $length values, expected $expected from lenmul=$rule ($check->{'type'})\n"
+        unless( $length == $expected );
+    }
+
+    if( exists $check->{'constraints'}->{'lenmatch'} )
+    {
+      my $refKey = $check->{'constraints'}->{'lenmatch'};
+      my $refValue = getConfigValue( $config, $refKey );
+      die "Invalid array length for $key: reference $refKey is missing or not an array ($check->{'type'})\n"
+        unless( ref( $refValue ) eq 'ARRAY' );
+      my $expected = scalar @$refValue;
+      die "Invalid array length for $key: got $length values, expected $expected to match $refKey ($check->{'type'})\n"
+        unless( $length == $expected );
     }
   }
 }
