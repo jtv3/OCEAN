@@ -51,6 +51,7 @@ else
   die "Failed to open $type_filename\n$!";
 }
 
+validateSchemaTypeMatch( $config, $typeDef );
 validateTypeSpecs( $typeDef, '' );
 
 
@@ -347,7 +348,7 @@ if( $haveLegacy == 1 )
       my $ref = $config;
       if( $newKey[0] eq 'nope' )
       {
-        print "WARNING: Ignoring recognized legacy input flag: $key ($newKey)\n";
+        print "COMMENT: Ignoring recognized legacy input flag: $key ($newKey)\n";
         next;
       }
       for( my $i = 0; $i < scalar @newKey; $i++ )
@@ -653,6 +654,52 @@ sub validateTypeSpecs
   {
     parseTypeSpec( $typeRef );
   }
+}
+
+
+# Collect dot-separated leaf paths from a JSON tree so oparse.json and
+# oparse.type.json can be checked for exact schema/type coverage.
+sub collectLeafPaths
+{
+  my ($node, $prefix, $pathsRef) = @_;
+  if( ref( $node ) eq 'HASH' )
+  {
+    foreach my $key ( keys %$node )
+    {
+      my $newPrefix = length $prefix ? "$prefix.$key" : $key;
+      collectLeafPaths( $node->{$key}, $newPrefix, $pathsRef );
+    }
+  }
+  else
+  {
+    $pathsRef->{$prefix} = 1;
+  }
+}
+
+
+# Require oparse.json and oparse.type.json to have exactly the same leaves.
+sub validateSchemaTypeMatch
+{
+  my ($config, $typeDef) = @_;
+  my %configPaths;
+  my %typePaths;
+  my @errors;
+
+  collectLeafPaths( $config, '', \%configPaths );
+  collectLeafPaths( $typeDef, '', \%typePaths );
+
+  foreach my $path ( sort keys %configPaths )
+  {
+    push @errors, "Missing type definition for $path" unless( exists $typePaths{$path} );
+  }
+
+  foreach my $path ( sort keys %typePaths )
+  {
+    push @errors, "Extra type definition for $path" unless( exists $configPaths{$path} );
+  }
+
+  die "Schema/type mismatch between oparse.json and oparse.type.json:\n"
+    . join( "\n", @errors ) . "\n" if( scalar @errors );
 }
 
 
