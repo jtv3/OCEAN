@@ -68,6 +68,7 @@ my %decoder = (
   'dft.qe_redirect' => 'dft.redirect',
   'nbands' => 'bse.nbands',
   'dft_energy_range' => 'bse.dft_energy_range',
+  'control' => 'nope.control',
   'obf_energy_range' => 'nope.obf_energy_range',
   'obkpt' => 'nope.obkpt',
   'obf.nbands' => 'nope.obf_nbands',
@@ -312,6 +313,7 @@ INPUT: foreach my $key ( @inputOrder )
 }
 
 my %seenInputKey;
+my %inputSource;
 
 if( $haveLegacy == 1 )
 {
@@ -340,6 +342,7 @@ if( $haveLegacy == 1 )
           . $seenInputKey{ $newKey } . " and $key both set $newKey\n";
       }
       $seenInputKey{ $newKey } = $key;
+      $inputSource{ $newKey } = { raw => $key, legacy => ( $key ne $newKey ) };
       print "$key : $newKey  $inputHash{ $key }\n";
       $inputHash{ $newKey } = $inputHash{ $key };
       delete( $inputHash{ $key } ) unless( $key eq $newKey );
@@ -378,6 +381,7 @@ if( $haveLegacy == 1 )
           . $seenInputKey{ $key } . " and $key both set $key\n";
       }
       $seenInputKey{ $key } = $key;
+      $inputSource{ $key } = { raw => $key, legacy => 0 };
       print "Comment: Mixed new and legacy input:  $key\n";
     }
   }
@@ -387,17 +391,27 @@ if( $haveLegacy == 1 )
   print OUT $rawInputFile;
   close OUT;
 }
+else
+{
+  foreach my $key ( @inputOrder )
+  {
+    $inputSource{ $key } = { raw => $key, legacy => 0 };
+  }
+}
 
 print "Storing parsed data\n\n";
 # If we made it here all the keys are valid
 my %suppliedInputKey;
+my %suppliedInputSource;
 foreach my $key ( keys %inputHash )
 {
   my $value = $inputHash{ $key };
   print "$key $value\n";
   my @newKey = split /\./, $key;
   next if( $newKey[0] eq 'nope' );
+  my $sourceRef = $inputSource{ $key };
   $suppliedInputKey{ $key } = 1;
+  $suppliedInputSource{ $key } = $sourceRef;
 
 
   my $type = $typeDef;
@@ -413,7 +427,7 @@ foreach my $key ( keys %inputHash )
   }
 
   my $regex;
-  my ($baseType, $constraints) = parseTypeSpec( $type );
+  my ($baseType, $constraints) = parseTypeSpec( $type, $key );
   $regex = '^\s*(-?\d+)\s*$' if( $baseType =~ m/i/ );
   # Full-token floating point match:
   #   ^\s* and \s*$ allow only optional leading/trailing whitespace.
@@ -431,9 +445,10 @@ foreach my $key ( keys %inputHash )
   if( $baseType =~ m/a/ )
   {
     my @rawArray = split ' ', $value;
-    foreach my $i (@rawArray)
+    for( my $j = 0; $j < scalar @rawArray; $j++ )
     {
-      die "Failed to match: $i of type $type\n" unless( $i =~ m/$regex/ );
+      dieInputTypeError( $key, $sourceRef, $rawArray[$j], $type, undef, $j + 1 )
+        unless( $rawArray[$j] =~ m/$regex/ );
     }
     if( $baseType =~ m/[if]/ )
     {
@@ -467,7 +482,7 @@ foreach my $key ( keys %inputHash )
       $config->{'psp'}->{'source'} = 'manual' if( scalar @rawArray > 0 );
     }
     # End legacy fix
-    validateArrayLength( $key, $type, $constraints, \@rawArray );
+    validateArrayLength( $key, $sourceRef, $type, $constraints, \@rawArray );
     $hashref->{$newKey[-1]} = [@rawArray];
   }
   else
@@ -522,7 +537,8 @@ foreach my $key ( keys %inputHash )
       }
       else
       {
-        die "Failed to match: $value of type $type\n";
+        dieInputTypeError( $key, $sourceRef, $value, $type,
+          "accepted forms: true/false, t/f, .true./.false., 1/0" );
       }
     }
     else
@@ -536,14 +552,14 @@ foreach my $key ( keys %inputHash )
       }
       else
       {
-        die "Failed to match: $value of type $type\n";
+        dieInputTypeError( $key, $sourceRef, $value, $type );
       }
     }
     $hashref->{$newKey[-1]} = $value;
   }
 }
 
-validateRelationalArrayLengths( $config, $typeDef, \%suppliedInputKey );
+validateRelationalArrayLengths( $config, $typeDef, \%suppliedInputKey, \%suppliedInputSource );
 
 my $enable = 1;
 $json->canonical([$enable]);
@@ -581,13 +597,102 @@ sub findInputKey
 }
 
 
+# Format the effective input key, adding the original legacy key when useful.
+sub formatInputKeyContext
+{
+  my ($effectiveKey, $sourceRef) = @_;
+  if( defined $sourceRef && $sourceRef->{'legacy'} )
+  {
+    return "$effectiveKey (from legacy $sourceRef->{'raw'})";
+  }
+  return $effectiveKey;
+}
+
+
+# Quote a user input token for diagnostics without changing parser behavior.
+sub quoteInputValue
+{
+  my ($value) = @_;
+  $value = '' unless( defined $value );
+  $value =~ s/\\/\\\\/g;
+  $value =~ s/\n/\\n/g;
+  $value =~ s/\t/\\t/g;
+  $value =~ s/'/\\'/g;
+  return "'$value'";
+}
+
+
+# Convert compact parser type strings into user-facing descriptions.
+sub describeType
+{
+  my ($baseType, $asElement) = @_;
+  my $type = 'value';
+
+  if( $baseType =~ m/f/ )
+  {
+    $type = 'floating point';
+  }
+  elsif( $baseType =~ m/i/ )
+  {
+    $type = 'integer';
+  }
+  elsif( $baseType =~ m/b/ )
+  {
+    $type = 'boolean';
+  }
+  elsif( $baseType =~ m/S/ )
+  {
+    $type = 'case-sensitive string';
+  }
+  elsif( $baseType =~ m/s/ )
+  {
+    $type = 'case-insensitive string';
+  }
+
+  return $type if( $asElement || $baseType !~ m/a/ );
+  return "array of $type values";
+}
+
+
+# Return "value" or "values" to make array length errors read naturally.
+sub valueWord
+{
+  my ($count) = @_;
+  return $count == 1 ? 'value' : 'values';
+}
+
+
+# Emit a consistent user-facing type conversion error.
+sub dieInputTypeError
+{
+  my ($key, $sourceRef, $value, $type, $rule, $arrayIndex) = @_;
+  my $keyContext = defined $arrayIndex ? "$key\[$arrayIndex\]" : $key;
+  $keyContext = formatInputKeyContext( $keyContext, $sourceRef );
+  my ($baseType) = split /:/, $type, 2;
+  my $typeDescription = describeType( $baseType, defined $arrayIndex );
+  my $message = "Invalid value for $keyContext: got " . quoteInputValue( $value )
+              . ", expected type $typeDescription";
+  $message .= " ($rule)" if( defined $rule && length $rule );
+  die "$message\n";
+}
+
+
+# Emit a consistent parser-schema/type-file error.
+sub dieTypeSpecError
+{
+  my ($path, $type, $message) = @_;
+  $path = '<unknown>' unless( defined $path && length $path );
+  die "Invalid type constraint for $path: $message in $type\n";
+}
+
+
 # Split an oparse.type.json leaf into the original compact base type and any
 # comma-separated constraint suffixes. For example:
 #   af:len=3
 # becomes base type "af" and constraints { len => 3 }.
 sub parseTypeSpec
 {
-  my ($type) = @_;
+  my ($type, $path) = @_;
   my ($baseType, $constraintString) = split /:/, $type, 2;
   my %constraints;
 
@@ -596,39 +701,39 @@ sub parseTypeSpec
     foreach my $constraint ( split /,/, $constraintString )
     {
       $constraint =~ m/^(\w+)=(.+)$/
-        or die "Malformed type constraint '$constraint' in $type\n";
+        or dieTypeSpecError( $path, $type, "malformed constraint '$constraint'" );
       my $name = $1;
       my $value = $2;
 
       if( $name eq 'len' || $name eq 'signlen' )
       {
-        die "$name constraint '$constraint' in $type requires an array type\n"
+        dieTypeSpecError( $path, $type, "$name constraint '$constraint' requires an array type" )
           unless( $baseType =~ m/a/ );
         $value =~ m/^\d+$/
-          or die "Invalid numeric type constraint '$constraint' in $type\n";
-        die "Invalid signlen constraint '$constraint' in $type\n"
+          or dieTypeSpecError( $path, $type, "invalid numeric constraint '$constraint'" );
+        dieTypeSpecError( $path, $type, "invalid signlen constraint '$constraint'" )
           if( $name eq 'signlen' && $value == 0 );
         $constraints{$name} = $value * 1;
       }
       elsif( $name eq 'oneof' || $name eq 'lenmatch' )
       {
-        die "$name constraint '$constraint' in $type requires an array type\n"
+        dieTypeSpecError( $path, $type, "$name constraint '$constraint' requires an array type" )
           unless( $baseType =~ m/a/ );
         $value =~ m/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/
-          or die "Invalid path type constraint '$constraint' in $type\n";
+          or dieTypeSpecError( $path, $type, "invalid path constraint '$constraint'" );
         $constraints{$name} = $value;
       }
       elsif( $name eq 'lenmul' )
       {
-        die "$name constraint '$constraint' in $type requires an array type\n"
+        dieTypeSpecError( $path, $type, "$name constraint '$constraint' requires an array type" )
           unless( $baseType =~ m/a/ );
         $value =~ m/^[1-9]\d*\*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/
-          or die "Invalid lenmul type constraint '$constraint' in $type\n";
+          or dieTypeSpecError( $path, $type, "invalid lenmul constraint '$constraint'" );
         $constraints{$name} = $value;
       }
       else
       {
-        die "Unknown type constraint '$name' in $type\n";
+        dieTypeSpecError( $path, $type, "unknown constraint '$name'" );
       }
     }
   }
@@ -652,7 +757,7 @@ sub validateTypeSpecs
   }
   else
   {
-    parseTypeSpec( $typeRef );
+    parseTypeSpec( $typeRef, $prefix );
   }
 }
 
@@ -706,37 +811,84 @@ sub validateSchemaTypeMatch
 # Enforce constraints that can be checked for one parsed array at a time.
 # This runs after legacy compatibility fixups, so legacy plot ranges have
 # already had the old leading "points" value removed before len=2 is checked.
-sub validateArrayLength
+sub describeArrayLengthRule
 {
   my ($key, $type, $constraints, $arrayRef) = @_;
+  my ($baseType) = split /:/, $type, 2;
+  my $typeDescription = describeType( $baseType, 0 );
+
+  if( exists $constraints->{'len'} )
+  {
+    my $expected = $constraints->{'len'};
+    return "expected exactly $expected " . valueWord( $expected ) . " ($typeDescription)";
+  }
+
+  if( exists $constraints->{'signlen'} )
+  {
+    my $positiveLength = $constraints->{'signlen'};
+    if( scalar @$arrayRef == 0 )
+    {
+      return "expected either 1 value with a negative first value, or "
+        . "$positiveLength " . valueWord( $positiveLength )
+        . " with a positive first value ($typeDescription)";
+    }
+    elsif( $arrayRef->[0] < 0 )
+    {
+      return "expected 1 value because first value is negative ($typeDescription)";
+    }
+    elsif( $arrayRef->[0] > 0 )
+    {
+      return "expected $positiveLength " . valueWord( $positiveLength )
+        . " because first value is positive ($typeDescription)";
+    }
+    else
+    {
+      return "first value is 0, expected a negative value for automatic sizing "
+        . "or a positive value for explicit sizing ($typeDescription)";
+    }
+  }
+
+  return "invalid array length ($typeDescription)";
+}
+
+
+sub validateArrayLength
+{
+  my ($key, $sourceRef, $type, $constraints, $arrayRef) = @_;
+  my $keyContext = formatInputKeyContext( $key, $sourceRef );
   my $length = scalar @$arrayRef;
 
   if( exists $constraints->{'len'} )
   {
     my $expected = $constraints->{'len'};
-    die "Invalid array length for $key: got $length values, expected len=$expected ($type)\n"
+    die "Invalid array length for $keyContext: got $length " . valueWord( $length )
+      . ", " . describeArrayLengthRule( $key, $type, $constraints, $arrayRef ) . "\n"
       unless( $length == $expected );
   }
 
   if( exists $constraints->{'signlen'} )
   {
     my $positiveLength = $constraints->{'signlen'};
-    die "Invalid array length for $key: got 0 values, expected signlen=$positiveLength ($type)\n"
+    die "Invalid array length for $keyContext: got 0 values, "
+      . describeArrayLengthRule( $key, $type, $constraints, $arrayRef ) . "\n"
       if( $length == 0 );
 
     if( $arrayRef->[0] < 0 )
     {
-      die "Invalid array length for $key: got $length values, expected 1 because first value is negative ($type)\n"
+      die "Invalid array length for $keyContext: got $length " . valueWord( $length )
+        . ", " . describeArrayLengthRule( $key, $type, $constraints, $arrayRef ) . "\n"
         unless( $length == 1 );
     }
     elsif( $arrayRef->[0] > 0 )
     {
-      die "Invalid array length for $key: got $length values, expected signlen=$positiveLength because first value is positive ($type)\n"
+      die "Invalid array length for $keyContext: got $length " . valueWord( $length )
+        . ", " . describeArrayLengthRule( $key, $type, $constraints, $arrayRef ) . "\n"
         unless( $length == $positiveLength );
     }
     else
     {
-      die "Invalid array length for $key: first value is zero, expected positive or negative first value ($type)\n";
+      die "Invalid array length for $keyContext: "
+        . describeArrayLengthRule( $key, $type, $constraints, $arrayRef ) . "\n";
     }
   }
 }
@@ -772,7 +924,7 @@ sub collectRelationalArrayConstraints
   }
   else
   {
-    my (undef, $constraints) = parseTypeSpec( $typeRef );
+    my (undef, $constraints) = parseTypeSpec( $typeRef, $prefix );
     push @{ $oneOfRef->{ $constraints->{'oneof'} } }, $prefix
       if( exists $constraints->{'oneof'} );
     push @$checksRef, { key => $prefix, type => $typeRef, constraints => $constraints }
@@ -783,9 +935,33 @@ sub collectRelationalArrayConstraints
 
 # Enforce relational constraints after all supplied values have been assigned.
 # This keeps checks independent of the order in the user's input file.
+sub describeRelationalLengthRule
+{
+  my ($type, $constraintName, $rule, $refKey, $expected) = @_;
+  my ($baseType) = split /:/, $type, 2;
+  my $typeDescription = describeType( $baseType, 0 );
+
+  if( $constraintName eq 'lenmul' )
+  {
+    my ($multiplier) = $rule =~ m/^([1-9]\d*)\*/;
+    return "expected $expected " . valueWord( $expected ) . ": "
+      . "$multiplier " . valueWord( $multiplier )
+      . " for each value in $refKey ($typeDescription)";
+  }
+
+  if( $constraintName eq 'lenmatch' )
+  {
+    return "expected $expected " . valueWord( $expected )
+      . ": one for each value in $refKey ($typeDescription)";
+  }
+
+  return "expected $expected " . valueWord( $expected ) . " ($typeDescription)";
+}
+
+
 sub validateRelationalArrayLengths
 {
-  my ($config, $typeDef, $suppliedRef) = @_;
+  my ($config, $typeDef, $suppliedRef, $sourceMapRef) = @_;
   my %oneOf;
   my @checks;
 
@@ -795,8 +971,13 @@ sub validateRelationalArrayLengths
   {
     my @members = @{ $oneOf{$group} };
     my @supplied = grep { exists $suppliedRef->{$_} } @members;
+    my @suppliedContext = map {
+      formatInputKeyContext( $_, defined $sourceMapRef ? $sourceMapRef->{$_} : undef )
+    } @supplied;
     die "Invalid array selection for $group: got " . scalar @supplied
-      . " supplied inputs, expected exactly one of " . join( ', ', @members ) . "\n"
+      . " supplied inputs"
+      . ( scalar @supplied ? " (" . join( ', ', @suppliedContext ) . ")" : "" )
+      . ", expected exactly one of " . join( ', ', @members ) . "\n"
       unless( scalar @supplied == 1 );
   }
 
@@ -804,9 +985,13 @@ sub validateRelationalArrayLengths
   {
     my $key = $check->{'key'};
     next unless( exists $suppliedRef->{$key} );
+    my $keyContext = formatInputKeyContext( $key,
+      defined $sourceMapRef ? $sourceMapRef->{$key} : undef );
 
     my $value = getConfigValue( $config, $key );
-    die "Invalid array length for $key: final value is missing or not an array ($check->{'type'})\n"
+    my ($baseType) = split /:/, $check->{'type'}, 2;
+    my $typeDescription = describeType( $baseType, 0 );
+    die "Invalid array length for $keyContext: final value is missing or is not an array ($typeDescription)\n"
       unless( ref( $value ) eq 'ARRAY' );
     my $length = scalar @$value;
 
@@ -817,10 +1002,11 @@ sub validateRelationalArrayLengths
       my $multiplier = $1;
       my $refKey = $2;
       my $refValue = getConfigValue( $config, $refKey );
-      die "Invalid array length for $key: reference $refKey is missing or not an array ($check->{'type'})\n"
+      die "Invalid array length for $keyContext: reference $refKey is missing or is not an array ($typeDescription)\n"
         unless( ref( $refValue ) eq 'ARRAY' );
       my $expected = $multiplier * scalar @$refValue;
-      die "Invalid array length for $key: got $length values, expected $expected from lenmul=$rule ($check->{'type'})\n"
+      die "Invalid array length for $keyContext: got $length " . valueWord( $length )
+        . ", " . describeRelationalLengthRule( $check->{'type'}, 'lenmul', $rule, $refKey, $expected ) . "\n"
         unless( $length == $expected );
     }
 
@@ -828,10 +1014,11 @@ sub validateRelationalArrayLengths
     {
       my $refKey = $check->{'constraints'}->{'lenmatch'};
       my $refValue = getConfigValue( $config, $refKey );
-      die "Invalid array length for $key: reference $refKey is missing or not an array ($check->{'type'})\n"
+      die "Invalid array length for $keyContext: reference $refKey is missing or is not an array ($typeDescription)\n"
         unless( ref( $refValue ) eq 'ARRAY' );
       my $expected = scalar @$refValue;
-      die "Invalid array length for $key: got $length values, expected $expected to match $refKey ($check->{'type'})\n"
+      die "Invalid array length for $keyContext: got $length " . valueWord( $length )
+        . ", " . describeRelationalLengthRule( $check->{'type'}, 'lenmatch', undef, $refKey, $expected ) . "\n"
         unless( $length == $expected );
     }
   }
