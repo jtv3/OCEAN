@@ -51,6 +51,8 @@ else
   die "Failed to open $type_filename\n$!";
 }
 
+validateTypeSpecs( $typeDef, '' );
+
 
 
 
@@ -404,7 +406,8 @@ foreach my $key ( keys %inputHash )
   }
 
   my $regex;
-  $regex = '^\s*(-?\d+)\s*$' if( $type =~ m/i/ );
+  my ($baseType, $constraints) = parseTypeSpec( $type );
+  $regex = '^\s*(-?\d+)\s*$' if( $baseType =~ m/i/ );
   # Full-token floating point match:
   #   ^\s* and \s*$ allow only optional leading/trailing whitespace.
   #   -? allows an optional minus sign.
@@ -413,26 +416,26 @@ foreach my $key ( keys %inputHash )
   #     by digits. This allows 1, 1., 1.0, and .1, but rejects bare ".".
   #   (?:[eEdD][+-]?\d+)? accepts an optional Fortran/C exponent with e, E, d,
   #     or D, an optional sign, and at least one exponent digit.
-  $regex = '^\s*(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?)\s*$' if( $type =~ m/f/ );
-  $regex = '^([\w\S\s]+)$' if ( $type =~ m/s|S/ );
+  $regex = '^\s*(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?)\s*$' if( $baseType =~ m/f/ );
+  $regex = '^([\w\S\s]+)$' if ( $baseType =~ m/s|S/ );
 
 
   # if array
-  if( $type =~ m/a/ )
+  if( $baseType =~ m/a/ )
   {
     my @rawArray = split ' ', $value;
     foreach my $i (@rawArray)
     {
       die "Failed to match: $i of type $type\n" unless( $i =~ m/$regex/ );
     }
-    if( $type =~ m/[if]/ )
+    if( $baseType =~ m/[if]/ )
     {
       for( my $i = 0; $i < scalar @rawArray; $i++ )
       { 
         $rawArray[$i] =~ s/[dD]/e/; # won't matter for int
         $rawArray[$i] *= 1 }
     }
-    elsif( $type =~ m/s/ )
+    elsif( $baseType =~ m/s/ )
     {
       for( my $i = 0; $i < scalar @rawArray; $i++ )
       { $rawArray[$i] = lc $rawArray[$i] }
@@ -457,6 +460,7 @@ foreach my $key ( keys %inputHash )
       $config->{'psp'}->{'source'} = 'manual' if( scalar @rawArray > 0 );
     }
     # End legacy fix
+    validateArrayLength( $key, $type, $constraints, \@rawArray );
     $hashref->{$newKey[-1]} = [@rawArray];
   }
   else
@@ -496,7 +500,7 @@ foreach my $key ( keys %inputHash )
       }
     }
     # end fix  
-    if( $type =~ m/b/ )
+    if( $baseType =~ m/b/ )
     {
       my $boolValue = lc $value;
       if( $boolValue eq 't' || $boolValue eq 'true' || $boolValue eq '.t.'
@@ -519,9 +523,9 @@ foreach my $key ( keys %inputHash )
       if( $value =~ m/$regex/ )
       {
         $value = $1;
-        $value =~ s/[dD]/e/ if( $type =~ m/f/ );
-        $value *= 1 if( $type =~ m/[if]/ );
-        $value = lc $value if( $type =~ m/s/ );
+        $value =~ s/[dD]/e/ if( $baseType =~ m/f/ );
+        $value *= 1 if( $baseType =~ m/[if]/ );
+        $value = lc $value if( $baseType =~ m/s/ );
       }
       else
       {
@@ -565,4 +569,103 @@ sub findInputKey
     $ref = $ref->{$newKey[$i]};
   }
   return 1;
+}
+
+
+# Split an oparse.type.json leaf into the original compact base type and any
+# comma-separated constraint suffixes. For example:
+#   af:len=3
+# becomes base type "af" and constraints { len => 3 }.
+sub parseTypeSpec
+{
+  my ($type) = @_;
+  my ($baseType, $constraintString) = split /:/, $type, 2;
+  my %constraints;
+
+  if( defined $constraintString && length $constraintString )
+  {
+    foreach my $constraint ( split /,/, $constraintString )
+    {
+      $constraint =~ m/^(\w+)=(.+)$/
+        or die "Malformed type constraint '$constraint' in $type\n";
+      my $name = $1;
+      my $value = $2;
+
+      if( $name eq 'len' || $name eq 'signlen' )
+      {
+        die "$name constraint '$constraint' in $type requires an array type\n"
+          unless( $baseType =~ m/a/ );
+        $value =~ m/^\d+$/
+          or die "Invalid numeric type constraint '$constraint' in $type\n";
+        die "Invalid signlen constraint '$constraint' in $type\n"
+          if( $name eq 'signlen' && $value == 0 );
+        $constraints{$name} = $value * 1;
+      }
+      else
+      {
+        die "Unknown type constraint '$name' in $type\n";
+      }
+    }
+  }
+
+  return ($baseType, \%constraints);
+}
+
+
+# Walk the full type tree once at startup so malformed constraints in
+# oparse.type.json fail even when the associated input is not supplied.
+sub validateTypeSpecs
+{
+  my ($typeRef, $prefix) = @_;
+  if( ref( $typeRef ) eq 'HASH' )
+  {
+    foreach my $key ( keys %$typeRef )
+    {
+      my $newPrefix = length $prefix ? "$prefix.$key" : $key;
+      validateTypeSpecs( $typeRef->{$key}, $newPrefix );
+    }
+  }
+  else
+  {
+    parseTypeSpec( $typeRef );
+  }
+}
+
+
+# Enforce constraints that can be checked for one parsed array at a time.
+# This runs after legacy compatibility fixups, so legacy plot ranges have
+# already had the old leading "points" value removed before len=2 is checked.
+sub validateArrayLength
+{
+  my ($key, $type, $constraints, $arrayRef) = @_;
+  my $length = scalar @$arrayRef;
+
+  if( exists $constraints->{'len'} )
+  {
+    my $expected = $constraints->{'len'};
+    die "Invalid array length for $key: got $length values, expected len=$expected ($type)\n"
+      unless( $length == $expected );
+  }
+
+  if( exists $constraints->{'signlen'} )
+  {
+    my $positiveLength = $constraints->{'signlen'};
+    die "Invalid array length for $key: got 0 values, expected signlen=$positiveLength ($type)\n"
+      if( $length == 0 );
+
+    if( $arrayRef->[0] < 0 )
+    {
+      die "Invalid array length for $key: got $length values, expected 1 because first value is negative ($type)\n"
+        unless( $length == 1 );
+    }
+    elsif( $arrayRef->[0] > 0 )
+    {
+      die "Invalid array length for $key: got $length values, expected signlen=$positiveLength because first value is positive ($type)\n"
+        unless( $length == $positiveLength );
+    }
+    else
+    {
+      die "Invalid array length for $key: first value is zero, expected positive or negative first value ($type)\n";
+    }
+  }
 }
