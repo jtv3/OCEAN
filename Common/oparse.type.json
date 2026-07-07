@@ -188,17 +188,17 @@
       "smag" : "S",
       "spinorb" : "b",
       "startingpot" : "s",
-      "startingwfc" : "S",
+      "startingwfc" : "s",
       "tmp_dir" : "S",
       "toldfe" : "f",
       "tolwfr" : "f",
       "verbatim" : {
-         "abinit" : "s",
+         "abinit" : "S",
          "qe" : {
-            "control" : "s",
-            "electrons" : "s",
-            "hubbard" : "s",
-            "system" : "s"
+            "control" : "S",
+            "electrons" : "S",
+            "hubbard" : "S",
+            "system" : "S"
          }
       }
    },
@@ -270,6 +270,6 @@
       "xbohr" : "af:oneof=structure.coords,lenmul=3*structure.typat",
       "xred" : "af:oneof=structure.coords,lenmul=3*structure.typat",
       "znucl" : "ai",
-      "zsymb" : "as:lenmatch=structure.znucl"
+      "zsymb" : "aS:lenmatch=structure.znucl"
    }
 }

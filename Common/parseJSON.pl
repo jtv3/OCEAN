@@ -52,6 +52,7 @@ else
 }
 
 validateSchemaTypeMatch( $config, $typeDef );
+validateCaseInsensitivePaths( $config, '' );
 validateTypeSpecs( $typeDef, '' );
 
 
@@ -304,7 +305,7 @@ my $haveLegacyValPlot = 0;
 
 INPUT: foreach my $key ( @inputOrder ) 
 {
-  unless( findInputKey( $config, $key ) )
+  unless( defined canonicalInputKey( $config, $key ) )
   { 
     $haveLegacy = 1;
     print "Unrecognized input flag: $key\n  Attempting legacy conversion\n";
@@ -314,23 +315,42 @@ INPUT: foreach my $key ( @inputOrder )
 
 my %seenInputKey;
 my %inputSource;
+my %resolvedInputHash;
 
 if( $haveLegacy == 1 )
 {
-  if( exists $inputHash{ 'ppdir' } ) {
-    if( $inputHash{ 'ppdir' } =~ m/^\s*'(.+)'\s*$/ ) {
-      print $inputHash{ 'ppdir' };
-      $inputHash{ 'ppdir' } = $1;
-      print "  " .$inputHash{ 'ppdir' } . "\n";
-    }
-    if( $inputHash{ 'ppdir' } =~ m/^\.\.\/$/ ) {
-      print $inputHash{ 'ppdir' };
-      $inputHash{ 'ppdir' } = './';
-      print "  " .$inputHash{ 'ppdir' } . "\n";
+  foreach my $key ( @inputOrder )
+  {
+    if( lc($key) eq 'ppdir' ) {
+      if( $inputHash{ $key } =~ m/^\s*'(.+)'\s*$/ ) {
+        print $inputHash{ $key };
+        $inputHash{ $key } = $1;
+        print "  " .$inputHash{ $key } . "\n";
+      }
+      if( $inputHash{ $key } =~ m/^\.\.\/$/ ) {
+        print $inputHash{ $key };
+        $inputHash{ $key } = './';
+        print "  " .$inputHash{ $key } . "\n";
+      }
     }
   }
   foreach my $key ( @inputOrder )
   {
+    my $canonicalKey = canonicalInputKey( $config, $key );
+    if( defined $canonicalKey )
+    {
+      if( exists $seenInputKey{ $canonicalKey } )
+      {
+        die "Duplicate input after legacy conversion: "
+          . $seenInputKey{ $canonicalKey } . " and $key both set $canonicalKey\n";
+      }
+      $seenInputKey{ $canonicalKey } = $key;
+      $inputSource{ $canonicalKey } = { raw => $key, legacy => 0 };
+      $resolvedInputHash{ $canonicalKey } = $inputHash{ $key };
+      print "Comment: Mixed new and legacy input:  $key\n";
+      next;
+    }
+
     my $lckey = lc($key);
 #    $key = lc($key) unless( exists $decoder{$key} );
 #    die "Unrecognized input flag: $key\n No recovery possible!" unless( exists $decoder{$lckey} );
@@ -338,14 +358,13 @@ if( $haveLegacy == 1 )
       my $newKey = $decoder{ $lckey };
       if( exists $seenInputKey{ $newKey } )
       {
-        die "Duplicate input after legacy conversion: " 
+        die "Duplicate input after legacy conversion: "
           . $seenInputKey{ $newKey } . " and $key both set $newKey\n";
       }
       $seenInputKey{ $newKey } = $key;
       $inputSource{ $newKey } = { raw => $key, legacy => ( $key ne $newKey ) };
+      $resolvedInputHash{ $newKey } = $inputHash{ $key };
       print "$key : $newKey  $inputHash{ $key }\n";
-      $inputHash{ $newKey } = $inputHash{ $key };
-      delete( $inputHash{ $key } ) unless( $key eq $newKey );
       $rawInputFile =~ s/$key/$newKey/;
       my @newKey = split /\./, $newKey;
       my $ref = $config;
@@ -371,18 +390,7 @@ if( $haveLegacy == 1 )
         $haveLegacyValPlot = 1;
       }
     } else {
-      unless( findInputKey( $config, $key ) )
-      {
-        die "Unsupported input flag. Neither new nor legacy:  $key\n";
-      }
-      if( exists $seenInputKey{ $key } )
-      {
-        die "Duplicate input after legacy conversion: " 
-          . $seenInputKey{ $key } . " and $key both set $key\n";
-      }
-      $seenInputKey{ $key } = $key;
-      $inputSource{ $key } = { raw => $key, legacy => 0 };
-      print "Comment: Mixed new and legacy input:  $key\n";
+      die "Unsupported input flag. Neither new nor legacy:  $key\n";
     }
   }
 
@@ -395,9 +403,19 @@ else
 {
   foreach my $key ( @inputOrder )
   {
-    $inputSource{ $key } = { raw => $key, legacy => 0 };
+    my $canonicalKey = canonicalInputKey( $config, $key );
+    if( exists $seenInputKey{ $canonicalKey } )
+    {
+      die "Duplicate input after case normalization: "
+        . $seenInputKey{ $canonicalKey } . " and $key both set $canonicalKey\n";
+    }
+    $seenInputKey{ $canonicalKey } = $key;
+    $inputSource{ $canonicalKey } = { raw => $key, legacy => 0 };
+    $resolvedInputHash{ $canonicalKey } = $inputHash{ $key };
   }
 }
+
+%inputHash = %resolvedInputHash;
 
 print "Storing parsed data\n\n";
 # If we made it here all the keys are valid
@@ -583,17 +601,70 @@ close OUT;
 
 
 
-sub findInputKey
+# Make sure case-insensitive input matching can choose between two schema keys.
+sub validateCaseInsensitivePaths
+{
+  my ($ref, $prefix) = @_;
+  return unless( ref( $ref ) eq 'HASH' );
+
+  my %seenKey;
+  foreach my $key ( keys %$ref )
+  {
+    my $lcKey = lc($key);
+    if( exists $seenKey{ $lcKey } )
+    {
+      my $path = length $prefix ? $prefix : '<root>';
+      die "Case-insensitive input schema collision under $path: "
+        . "$seenKey{ $lcKey } and $key\n";
+    }
+    $seenKey{ $lcKey } = $key;
+  }
+
+  foreach my $key ( keys %$ref )
+  {
+    my $newPrefix = length $prefix ? "$prefix.$key" : $key;
+    validateCaseInsensitivePaths( $ref->{$key}, $newPrefix );
+  }
+}
+
+
+# Return the exact oparse.json leaf path for an input key, ignoring user case.
+sub canonicalInputKey
 {
   my ($config, $key) = @_;
   my @newKey = split /\./, $key;
+  my @canonicalKey;
   my $ref = $config;
+
   for( my $i = 0; $i < scalar @newKey; $i++ )
   {
-    return 0 unless( ref( $ref ) eq 'HASH' && exists $ref->{$newKey[$i]} );
-    $ref = $ref->{$newKey[$i]};
+    return undef unless( ref( $ref ) eq 'HASH' );
+
+    my $matchedKey;
+    if( exists $ref->{$newKey[$i]} )
+    {
+      $matchedKey = $newKey[$i];
+    }
+    else
+    {
+      my $lcKey = lc($newKey[$i]);
+      foreach my $possibleKey ( keys %$ref )
+      {
+        if( lc($possibleKey) eq $lcKey )
+        {
+          $matchedKey = $possibleKey;
+          last;
+        }
+      }
+    }
+
+    return undef unless( defined $matchedKey );
+    push @canonicalKey, $matchedKey;
+    $ref = $ref->{$matchedKey};
   }
-  return 1;
+
+  return undef if( ref( $ref ) eq 'HASH' );
+  return join '.', @canonicalKey;
 }
 
 
