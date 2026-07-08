@@ -339,7 +339,7 @@ if( -e $dataFile )
   {
     my $t0 = [gettimeofday];
 #    print "MODEL: " . $newScreenData->{'model'}->{'complete'} . "\n";
-    if( $newScreenData->{'model'}->{'flavor'} eq 'SLL') {
+    if( lc($newScreenData->{'model'}->{'flavor'}) eq 'sll') {
       runVhommod($newScreenData->{'model'}->{'SLL'}) 
     } else {
       die "Unrecognized model flavor!\n";
@@ -2829,4 +2829,3 @@ sub recursiveCompare
     }
   }
 }
-
