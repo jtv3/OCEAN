@@ -10,11 +10,13 @@ use strict;
 require JSON::PP;
 JSON::PP->import;
 use File::Copy;
+use Scalar::Util qw( looks_like_number );
 
 
 my $input_filename = $ARGV[0];
 my $config_filename = $ARGV[1];
 my $type_filename = $ARGV[2];
+my $enum_filename = $ARGV[3];
 
 unless(  -e $input_filename )
 {
@@ -24,6 +26,11 @@ unless(  -e $input_filename )
 unless( -e $config_filename )
 {
   die "Could not find config file $config_filename!\n";
+}
+
+unless( defined $enum_filename && -e $enum_filename )
+{
+  die "Could not find enum file " . ( defined $enum_filename ? $enum_filename : '<undef>' ) . "!\n";
 }
 
 my $json = JSON::PP->new;
@@ -51,9 +58,12 @@ else
   die "Failed to open $type_filename\n$!";
 }
 
+my $enumDef = loadEnumDefinition( $enum_filename, $json );
+
 validateSchemaTypeMatch( $config, $typeDef );
 validateCaseInsensitivePaths( $config, '' );
 validateTypeSpecs( $typeDef, '' );
+validateEnumSpecs( $enumDef, $config, $typeDef, '' );
 
 
 
@@ -505,6 +515,8 @@ foreach my $key ( keys %inputHash )
       $config->{'psp'}->{'source'} = 'manual' if( scalar @rawArray > 0 );
     }
     # End legacy fix
+    validateInputEnumValue( $enumDef, $key, $sourceRef, $rawArray[$_], $_ + 1 )
+      for( 0 .. $#rawArray );
     validateArrayLength( $key, $sourceRef, $type, $constraints, \@rawArray );
     $hashref->{$newKey[-1]} = [@rawArray];
   }
@@ -572,6 +584,7 @@ foreach my $key ( keys %inputHash )
         $value =~ s/[dD]/e/ if( $baseType =~ m/f/ );
         $value *= 1 if( $baseType =~ m/[if]/ );
         $value = lc $value if( $baseType =~ m/s/ );
+        validateInputEnumValue( $enumDef, $key, $sourceRef, $value );
       }
       else
       {
@@ -759,6 +772,137 @@ sub dieTypeSpecError
   my ($path, $type, $message) = @_;
   $path = '<unknown>' unless( defined $path && length $path );
   die "Invalid type constraint for $path: $message in $type\n";
+}
+
+
+# Load the sparse enum definition. The enum file is required so a missing
+# installation/configuration file cannot silently disable validation.
+sub loadEnumDefinition
+{
+  my ($enumFilename, $json) = @_;
+
+  my $enumDef;
+  if( open( my $in, "<", $enumFilename ) )
+  {
+    local $/ = undef;
+    $enumDef = $json->decode(<$in>);
+    close($in);
+  }
+  else
+  {
+    die "Failed to open $enumFilename\n$!";
+  }
+  die "Invalid enum definition for <root>: expected JSON object\n"
+    unless( ref( $enumDef ) eq 'HASH' );
+  return $enumDef;
+}
+
+
+sub dieEnumSpecError
+{
+  my ($path, $message) = @_;
+  $path = '<root>' unless( defined $path && length $path );
+  die "Invalid enum definition for $path: $message\n";
+}
+
+
+# Fetch a dot-separated path while distinguishing missing paths from JSON null.
+sub getPathValue
+{
+  my ($tree, $key) = @_;
+  return (1, $tree) unless( defined $key && length $key );
+
+  my @path = split /\./, $key;
+  my $ref = $tree;
+  foreach my $part ( @path )
+  {
+    return (0, undef) unless( ref( $ref ) eq 'HASH' && exists $ref->{$part} );
+    $ref = $ref->{$part};
+  }
+  return (1, $ref);
+}
+
+
+# Validate the sparse enum tree against oparse.json and oparse.type.json.
+sub validateEnumSpecs
+{
+  my ($enumRef, $config, $typeDef, $prefix) = @_;
+
+  if( ref( $enumRef ) eq 'HASH' )
+  {
+    if( length $prefix )
+    {
+      my ($exists, $configValue) = getPathValue( $config, $prefix );
+      dieEnumSpecError( $prefix, "path not found in oparse.json" ) unless( $exists );
+      dieEnumSpecError( $prefix, "expected object path in oparse.json" )
+        unless( ref( $configValue ) eq 'HASH' );
+    }
+
+    foreach my $key ( sort keys %$enumRef )
+    {
+      my $newPrefix = length $prefix ? "$prefix.$key" : $key;
+      validateEnumSpecs( $enumRef->{$key}, $config, $typeDef, $newPrefix );
+    }
+    return;
+  }
+
+  dieEnumSpecError( $prefix, "expected allowed-value array or object" )
+    unless( ref( $enumRef ) eq 'ARRAY' );
+  dieEnumSpecError( $prefix, "allowed-value array cannot be empty" )
+    unless( scalar @$enumRef );
+
+  my ($configExists, $configValue) = getPathValue( $config, $prefix );
+  dieEnumSpecError( $prefix, "path not found in oparse.json" ) unless( $configExists );
+
+  my ($typeExists, $type) = getPathValue( $typeDef, $prefix );
+  dieEnumSpecError( $prefix, "path not found in oparse.type.json" ) unless( $typeExists );
+  dieEnumSpecError( $prefix, "enum entries are only valid on leaf type strings" )
+    if( ref( $type ) );
+
+  my ($baseType) = parseTypeSpec( $type, $prefix );
+  dieEnumSpecError( $prefix, "enum entries are only valid for s or as types, got $baseType" )
+    unless( $baseType eq 's' || $baseType eq 'as' );
+
+  my %seenValue;
+  foreach my $value ( @$enumRef )
+  {
+    dieEnumSpecError( $prefix, "allowed values must be strings" )
+      if( ! defined $value || ref( $value ) || looks_like_number( $value ) );
+    dieEnumSpecError( $prefix, "allowed value '$value' is not lowercase" )
+      unless( lc($value) eq $value );
+    dieEnumSpecError( $prefix, "duplicate allowed value '$value'" )
+      if( exists $seenValue{$value} );
+    $seenValue{$value} = 1;
+  }
+}
+
+
+sub getEnumAllowedValues
+{
+  my ($enumDef, $key) = @_;
+  my ($exists, $value) = getPathValue( $enumDef, $key );
+  return undef unless( $exists );
+  dieEnumSpecError( $key, "expected allowed-value array" )
+    unless( ref( $value ) eq 'ARRAY' );
+  return $value;
+}
+
+
+sub validateInputEnumValue
+{
+  my ($enumDef, $key, $sourceRef, $value, $arrayIndex) = @_;
+  my $allowedRef = getEnumAllowedValues( $enumDef, $key );
+  return unless( defined $allowedRef );
+
+  foreach my $allowed ( @$allowedRef )
+  {
+    return if( defined $value && $value eq $allowed );
+  }
+
+  my $keyContext = defined $arrayIndex ? "$key\[$arrayIndex\]" : $key;
+  $keyContext = formatInputKeyContext( $keyContext, $sourceRef );
+  die "Invalid value for $keyContext: got " . quoteInputValue( $value )
+    . ", allowed values: " . join( ', ', @$allowedRef ) . "\n";
 }
 
 
