@@ -800,14 +800,19 @@ sub QEparseDensityPotential
 #  if($type eq 'potential' ) {
 #    $didSwap = QEmggaFix();
 #  }
-  QErunPP( $hashRef->{'general'}->{'redirect'}, $prefix, $cmdLine, "$infile", "$outfile" );
+  my $error = QErunPP( $hashRef->{'general'}->{'redirect'}, $prefix, $cmdLine, "$infile", "$outfile" );
+  if( $error )
+  {
+    print "QE PP run failed with exit code $error\n";
+    return $error;
+  }
 #  if( $didSwap ) {
 #    QEmggaUnFix();
 #  }
 
   # Check for NaN with metaGGA
   if( $type eq 'potential' ) {
-    my $error = QEfixPP( $hashRef->{'general'}->{'redirect'}, $prefix, $cmdLine, "$infile", "$outfile", "system.pot" );
+    $error = QEfixPP( $hashRef->{'general'}->{'redirect'}, $prefix, $cmdLine, "$infile", "$outfile", "system.pot" );
     print "POT: $error\n";
     return $error if( $error != 0 );
   }
@@ -855,7 +860,12 @@ sub QEfixPP
     close OUT;
     print "QE fix $funct\n";
 
-    QErunPP( $redirect, $prefix, $cmdLine, $infile, $outfile );
+    my $error = QErunPP( $redirect, $prefix, $cmdLine, $infile, $outfile );
+    if( $error )
+    {
+      print "QE PP retry failed with exit code $error\n";
+      return $error;
+    }
 
     open IN, "<", $potfile or die "Failed to open $potfile\n$!";
     $NAN = 0;
@@ -1061,16 +1071,19 @@ sub QErunPP
 {
   my( $redirect, $prefix, $cmdLine, $in, $out ) = @_;
 
+  my $status;
   if( $redirect )
   {
     print  "$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine < $in > $out 2>&1\n";
-    system("$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine < $in > $out 2>&1");
+    $status = system("$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine < $in > $out 2>&1");
   }
   else
   {
     print  "$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine -inp $in > $out 2>&1\n";
-    system("$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine -inp $in > $out 2>&1");
+    $status = system("$prefix $ENV{'OCEAN_ESPRESSO_PP'} $cmdLine -inp $in > $out 2>&1");
   }
+
+  return QEnormalizeSystemStatus( $status );
 }
 
 # subroutine to handle running each QE step
