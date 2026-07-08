@@ -239,7 +239,7 @@
          "lmax" : "i",
          "rmax" : "f",
          "rmode" : "as",
-         "scheme" : "s",
+         "scheme" : "su",
          "shells" : "af"
       },
       "inversionstyle" : "s",
