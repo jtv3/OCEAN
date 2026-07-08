@@ -445,7 +445,12 @@ foreach my $key ( keys %inputHash )
   }
 
   my $regex;
-  my ($baseType, $constraints) = parseTypeSpec( $type, $key );
+  my ($baseType, $constraints, $unsupported) = parseTypeSpec( $type, $key );
+  if( $unsupported )
+  {
+    my $keyContext = formatInputKeyContext( $key, $sourceRef );
+    print "WARNING: Input flag $keyContext has no functionality in the current code.\n";
+  }
   $regex = '^\s*(-?\d+)\s*$' if( $baseType =~ m/i/ );
   # Full-token floating point match:
   #   ^\s* and \s*$ allow only optional leading/trailing whitespace.
@@ -764,6 +769,7 @@ sub dieTypeSpecError
 sub parseTypeSpec
 {
   my ($type, $path) = @_;
+  my $unsupported = ( $type =~ s/u$// );
   my ($baseType, $constraintString) = split /:/, $type, 2;
   my %constraints;
 
@@ -809,7 +815,7 @@ sub parseTypeSpec
     }
   }
 
-  return ($baseType, \%constraints);
+  return ($baseType, \%constraints, $unsupported);
 }
 
 

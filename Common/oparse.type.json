@@ -30,9 +30,9 @@
             "niter" : "i"
          },
          "plot" : {
-            "auto" : "b",
-            "delta" : "f",
-            "pad" : "f",
+            "auto" : "bu",
+            "delta" : "fu",
+            "pad" : "fu",
             "points" : "i",
             "range" : "af:len=2"
          },
@@ -63,7 +63,7 @@
          "disable_intraband" : "b",
          "epsilon_threshold" : "f",
          "gmres" : {
-            "echamp" : "b",
+            "echamp" : "bu",
             "elist" : "af",
             "erange" : "af",
             "estyle" : "s",
@@ -132,7 +132,7 @@
       "abpad" : "i",
       "bse" : {
          "diagonalization" : "s",
-         "poolsize" : "i",
+         "poolsize" : "iu",
          "split" : "b",
          "toldfe" : "f"
       },
@@ -140,10 +140,10 @@
       "calc_stress" : "b",
       "degauss" : "f",
       "den" : {
-         "auto" : "b",
+         "auto" : "bu",
          "kmesh" : "af:signlen=3",
          "kshift" : "af:len=3",
-         "poolsize" : "i",
+         "poolsize" : "iu",
          "toldfe" : "f"
       },
       "diagonalization" : "s",
@@ -153,10 +153,10 @@
       },
       "epsilon" : {
          "metal_max" : "f",
-         "metal_min" : "f",
+         "metal_min" : "fu",
          "method" : "s",
-         "min_gap" : "f",
-         "thresh" : "f"
+         "min_gap" : "fu",
+         "thresh" : "fu"
       },
       "fband" : "f",
       "functional" : "s",
@@ -173,7 +173,7 @@
       },
       "mixing" : "f",
       "mixing_mode" : "s",
-      "ndiag" : "i",
+      "ndiag" : "iu",
       "noncolin" : "b",
       "nspin" : "i",
       "nstep" : "i",
@@ -182,7 +182,7 @@
       "redirect" : "b",
       "screen" : {
          "diagonalization" : "s",
-         "poolsize" : "i",
+         "poolsize" : "iu",
          "toldfe" : "f"
       },
       "smag" : "S",
