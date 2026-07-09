@@ -1175,12 +1175,17 @@ sub writeValAuxFiles {
     close OUT;
   }
 
-  #TODO GW control
-  if( $hashRef->{'bse'}->{'val'}->{'gw'}->{'control'} eq 'cstr' ) {
+  my $gwControl = $hashRef->{'bse'}->{'val'}->{'gw'}->{'control'};
+  if( $gwControl eq 'none' || $gwControl eq 'band'
+      || $gwControl eq 'ibnd' || $gwControl eq 'cstr' ) {
     open OUT, ">", "gw_control" or die "Failed to open gw_control\n$!";
-    print OUT "cstr\n";
+    print OUT "$gwControl\n";
     close OUT;
+  } else {
+    die "Unsupported valence GW control: $gwControl\n";
+  }
 
+  if( $gwControl eq 'cstr' ) {
     open OUT, ">", "gw_val_cstr" or die "Failed to open gw_val_cstr\n$!";
     printf OUT "%g ", $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'gap'};
     if( $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'abs_gap'} == $JSON::PP::true ) {
@@ -1190,10 +1195,6 @@ sub writeValAuxFiles {
     }
     printf OUT "%g %g\n", $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'vstr'}, 
                           $hashRef->{'bse'}->{'val'}->{'gw'}->{'cstr'}->{'cstr'};
-    close OUT;
-  } else {
-    open OUT, ">", "gw_control" or die "Failed to open gw_control\n$!";
-    print OUT "none\n";
     close OUT;
   }
     

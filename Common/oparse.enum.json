@@ -9,26 +9,26 @@
          },
          "gw" : {
             "control" : [
-               "none",
-               "full",
-               "real",
                "band",
-               "ibnd",
                "cstr",
-               "list"
+               "full",
+               "ibnd",
+               "list",
+               "none",
+               "real"
             ]
          },
          "solver" : [
-            "haydock",
-            "gmres"
+            "gmres",
+            "haydock"
          ]
       },
       "occupation" : {
          "type" : [
-            "none",
             "fermi",
             "fixed",
-            "full"
+            "full",
+            "none"
          ]
       },
       "val" : {
@@ -40,38 +40,40 @@
          },
          "gw" : {
             "control" : [
-               "none",
-               "cstr"
+               "band",
+               "cstr",
+               "ibnd",
+               "none"
             ]
          },
          "solver" : [
-            "haydock",
-            "gmres"
+            "gmres",
+            "haydock"
          ]
       }
    },
    "calc" : {
       "mode" : [
-         "xas",
-         "xes",
+         "rxs",
          "val",
-         "rxs"
+         "xas",
+         "xes"
       ]
    },
    "dft" : {
       "bse" : {
          "diagonalization" : [
-            "davidson",
-            "david",
             "cg",
+            "david",
+            "davidson",
             "ppcg"
          ]
       },
       "diagonalization" : [
-         "default",
-         "david",
          "cg",
+         "david",
          "davidson",
+         "default",
          "ppcg"
       ],
       "epsilon" : {
@@ -81,9 +83,9 @@
          ]
       },
       "mixing_mode" : [
+         "local-tf",
          "plain",
-         "tf",
-         "local-tf"
+         "tf"
       ],
       "program" : [
          "abi",
@@ -91,9 +93,9 @@
       ],
       "screen" : {
          "diagonalization" : [
-            "davidson",
-            "david",
             "cg",
+            "david",
+            "davidson",
             "ppcg"
          ]
       },
@@ -102,23 +104,23 @@
          "file"
       ],
       "startingwfc" : [
-         "atomic+random",
          "atomic",
-         "random",
-         "file"
+         "atomic+random",
+         "file",
+         "random"
       ]
    },
    "opf" : {
       "program" : [
-         "shirley",
-         "hamann"
+         "hamann",
+         "shirley"
       ]
    },
    "psp" : {
       "ecut_quality" : [
-         "normal",
          "high",
-         "low"
+         "low",
+         "normal"
       ],
       "source" : [
          "database",
@@ -127,9 +129,9 @@
    },
    "screen" : {
       "convertstyle" : [
+         "fft2",
          "intp",
-         "real",
-         "fft2"
+         "real"
       ],
       "grid" : {
          "rmode" : [

@@ -380,8 +380,10 @@ module OCEAN_val_energy
 !        case ('full')
 !          call val_abinit_fullgw( sys, ierr, .true. )
         case ('list')
-          write(6,*) 'GW! Will attempt list-style corrections'
-          call val_list_gw( sys, val_energies, con_energies, ierr )
+          write(6,*) 'Valence list-style GW corrections are not functional.'
+          write(6,*) 'No GW corrections will be done.'
+          have_gw = .false.
+!          call val_list_gw( sys, val_energies, con_energies, ierr )
         case( 'band' )
           call val_gw_by_band( sys, val_energies, con_energies, ierr, .false. )
         case( 'ibnd' )
@@ -402,14 +404,14 @@ module OCEAN_val_energy
     if( ierr .ne. MPI_SUCCESS ) return
     if( have_gw ) then
 !      call MPI_BCAST( val_energies, sys%cur_run%val_bands * sys%nkpts, MPI_DOUBLE_PRECISION, & 
-      call MPI_BCAST( val_energies, (sys%brange(2)-sys%brange(1)) * sys%nkpts * sys%nspn * sys%nbw, &
+      call MPI_BCAST( val_energies, (sys%brange(2)-sys%brange(1)+1) * sys%nkpts * sys%nspn * sys%nbw, &
                       MPI_DOUBLE_PRECISION, root, comm, ierr )
-      call MPI_BCAST( con_energies, (sys%brange(4)-sys%brange(3)) * sys%nkpts * sys%nspn * sys%nbw, &
+      call MPI_BCAST( con_energies, (sys%brange(4)-sys%brange(3)+1) * sys%nkpts * sys%nspn * sys%nbw, &
                       MPI_DOUBLE_PRECISION, root, comm, ierr )
       call MPI_BCAST( have_imaginary, 1, MPI_LOGICAL, root, comm, ierr )
-      call MPI_BCAST( im_val_energies, (sys%brange(2)-sys%brange(1)) * sys%nkpts * sys%nspn * sys%nbw, &
+      call MPI_BCAST( im_val_energies, (sys%brange(2)-sys%brange(1)+1) * sys%nkpts * sys%nspn * sys%nbw, &
                       MPI_DOUBLE_PRECISION, root, comm, ierr )
-      call MPI_BCAST( im_con_energies, (sys%brange(4)-sys%brange(3)) * sys%nkpts * sys%nspn * sys%nbw, &
+      call MPI_BCAST( im_con_energies, (sys%brange(4)-sys%brange(3)+1) * sys%nkpts * sys%nspn * sys%nbw, &
                       MPI_DOUBLE_PRECISION, root, comm, ierr )
     endif
 #endif
