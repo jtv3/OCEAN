@@ -97,10 +97,10 @@ subroutine cmjtv( nsphpt, xsph, ysph, zsph, wsph, prefs )
      stop
 
   end select
-  write ( 6, '(1a4,1f10.5)' ) 'q = ', q
+  write ( 6, '(1a4,1f10.5,a)' ) 'q = ', q, ' inverse Bohrs'
   !
   if( spcttype(1:2) .eq. 'tp' ) then
-    write(f12, '(1A9I3.3)') 'corezetaz', atno
+    write(f12, '(1A9,I3.3)') 'corezetaz', atno
     open( unit=98, file=f12, form='formatted', status='old' )
     allocate( atomNL( 2, atomNLMax ), atomEnergy( atomNLMax ) )
     atomNL(:,:) = -1
