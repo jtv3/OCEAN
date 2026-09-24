@@ -1795,7 +1795,7 @@ sub printXKpoints
       }
       $length = sprintf "%12.5f", 1/$inv;
       if( $length <= $prev_length ) {
-        $skip = 2;} else { print "$length $prev_length\n";}
+        $skip = 2;} #else { print "$length $prev_length\n";}
       $prev_length = $length;
       if( $skip == 0 ) {
         printf OUT "%5d %5d %5d  %12.6f %12.6f\n", $x[0], $x[1], $x[2], $inv, 1/$inv;
