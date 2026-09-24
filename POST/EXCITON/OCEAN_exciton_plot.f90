@@ -15,7 +15,7 @@ program OCEAN_exciton_plot
 
   real(DP), allocatable :: z_stripe( : ), xyz(:,:), atom_loc(:,:), cubeExciton(:,:,:)
   real(DP) :: qinb(3), avecs(3,3), su, k0(3), qvec(3), Rvec(3), xphs, yphs, zphs, twopi, tau(3), ur, ui, suTarg
-  real(DP) :: realSpaceBox(3), rsDelta, inverseA(3,3), temp1(3), distance(3), isoTarg, isoMin, isoMax, su2, isos(2,19)
+  real(DP) :: realSpaceBox(3), rsDelta, inverseA(3,3), temp1(3), distance(3), isoTarg, isoMin, isoMax, su2, isos(2,20)
 
   integer, allocatable :: ibeg(:,:)
   integer :: Rmesh(3), kmesh(3), nband, nalpha, nkpts, NR, Riter, kiter, xmesh(3), nspn, ispin, ivh2

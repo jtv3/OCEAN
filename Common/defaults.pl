@@ -1765,6 +1765,8 @@ sub printXKpoints
  
   open OUT, ">", "x.txt" or die "Failed to open x.txt\n$!";
   print OUT "#       xmesh            inv-x        x\n";
+  my $prev_length = 0;
+  my $length;
   for( my $k = 0; $k < 2; $k++ ) 
   {
     for( my $j = 0; $j < 1000; $j ++ ) {
@@ -1791,6 +1793,10 @@ sub printXKpoints
       for( my $i = 1; $i < 3; $i++ ) {
         $inv = $len[$i]/$x[$i] if( $len[$i]/$x[$i] > $inv );
       }
+      $length = sprintf "%12.5f", 1/$inv;
+      if( $length <= $prev_length ) {
+        $skip = 2;} else { print "$length $prev_length\n";}
+      $prev_length = $length;
       if( $skip == 0 ) {
         printf OUT "%5d %5d %5d  %12.6f %12.6f\n", $x[0], $x[1], $x[2], $inv, 1/$inv;
       }
