@@ -12,7 +12,7 @@ subroutine OCEAN_read_tmels( sys, p, file_selector, ierr )
 
 
   integer :: nbc(2), nbv, nk, ik, fh, elements, ic, i, j
-  integer :: ispn, ibeta, ibw
+  integer :: ispn, ibeta, ibw, ivb(4)
 
   real(dp) :: inv_qlength, qinb(3), max_psi, su
   complex(dp), allocatable :: psi_in(:,:)
@@ -100,21 +100,34 @@ subroutine OCEAN_read_tmels( sys, p, file_selector, ierr )
 
   !      max_psi = max( max_psi, maxval( real(psi_in(:,:) ) ) )
 
-        psi_transpose( :, : ) = inv_qlength * real( psi_in( sys%brange(1):sys%brange(2), sys%brange(3):sys%brange(4) ), DP )
+!TODO: right now we'll need to re-run PREP to change brange
+        ! 
+        ivb(1) = sys%brange(1) - sys%file_brange(1) + 1
+        ivb(2) = sys%brange(2) - sys%file_brange(1) + 1
+!        psi_transpose( :, : ) = inv_qlength * real( psi_in( sys%brange(1):sys%brange(2), sys%brange(3):sys%brange(4) ), DP )
+        psi_transpose( :, : ) = inv_qlength * real( psi_in( ivb(1):ivb(2), sys%brange(3):sys%brange(4) ), DP )
         p%valr(1:sys%cur_run%num_bands,1:sys%cur_run%val_bands,ik,ibeta,1) = transpose( psi_transpose )
 
         psi_transpose( :, : ) = inv_qlength &
-                              * real( aimag( psi_in( sys%brange(1):sys%brange(2), sys%brange(3):sys%brange(4) ) ), DP )
+!                              * real( aimag( psi_in( sys%brange(1):sys%brange(2), sys%brange(3):sys%brange(4) ) ), DP )
+                              * real( aimag( psi_in( ivb(1):ivb(2), sys%brange(3):sys%brange(4) ) ), DP )
         p%vali(1:sys%cur_run%num_bands,1:sys%cur_run%val_bands,ik,ibeta,1) = -transpose( psi_transpose )
 
 
         max_psi = max( max_psi, maxval( p%valr(1:sys%cur_run%num_bands,1:sys%cur_run%val_bands,ik,ibeta,1) ) )
 
         if( sys%bwflg ) then
+          ivb(1) = sys%brange(3) - sys%file_brange(1) + 1
+          ivb(2) = sys%brange(4) - sys%file_brange(1) + 1
+          ivb(3) = sys%brange(1) - nbc(1) + 1
+          ivb(4) = sys%brange(2) - nbc(2) + 1
           p%valr(1:sys%cur_run%num_bands,1:sys%cur_run%val_bands,ik,ibeta,2) = inv_qlength * &
-            real( psi_in( sys%brange(3):sys%brange(4), sys%brange(1):sys%brange(2) ), DP )
+            real( psi_in( ivb(1):ivb(2), sys%brange(1):sys%brange(2) ), DP )
+!            real( psi_in( sys%brange(3):sys%brange(4), sys%brange(1):sys%brange(2) ), DP )
           p%vali(1:sys%cur_run%num_bands,1:sys%cur_run%val_bands,ik,ibeta,2) = -inv_qlength * &
-            real( aimag( psi_in( sys%brange(3):sys%brange(4), sys%brange(1):sys%brange(2) ) ), DP )
+!            real( aimag( psi_in( ivb(1):ivb(2), ivb(3):ivb(4) ) ), DP )
+            real( aimag( psi_in( ivb(1):ivb(2), sys%brange(1):sys%brange(2) ) ), DP )
+!            real( aimag( psi_in( sys%brange(3):sys%brange(4), sys%brange(1):sys%brange(2) ) ), DP )
         endif
       enddo
       su = 0.0_DP

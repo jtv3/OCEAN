@@ -697,7 +697,7 @@ module OCEAN_val_energy
     !
     integer :: kiter, biter1, biter2, ibeta, i, ispn, j, jspn, ibw
     logical :: have_clipl, have_cliph
-    real(dp) :: clipl, cliph
+    real(dp) :: clipl, cliph, itemp, scaledFermi, val_fac, con_fac
     !
     !
     ! Already zero'd
@@ -741,7 +741,48 @@ module OCEAN_val_energy
     !  just like for the metals case. 
     !
     ! In storing psi the conduction band index is the fast index
-    if( metal .or. sys%nspn .ne. 1 ) then
+    if( sys%occupationType .eq. 'fermi' ) then
+      itemp = 1.0_dp / sys%occupationValue
+      scaledFermi = - efermi / sys%occupationValue
+      do ibw = 1, sys%nbw
+        ibeta = 0
+        do i = 1, sys%valence_ham_spin
+          ispn = min( i, sys%nspn )
+          do j = 1, sys%valence_ham_spin
+            jspn = min( j, sys%nspn )
+            ibeta = ibeta + 1
+            do kiter = 1, sys%nkpts
+              do biter2 = 1, sys%cur_run%val_bands
+                if (  val_energies( biter2, kiter, ispn, ibw ) .ge. clipl ) then
+!                  val_fac = 1.0_DP - ( 1.0_dp / ( exp(  val_energies( biter2, kiter, ispn, ibw ) * itemp + scaledFermi ) + 1.0_dp ) )
+                  val_fac = fermi_occ( val_energies( biter2, kiter, ispn, ibw ), efermi, sys%occupationValue )
+                  do biter1 = 1, sys%cur_run%num_bands
+                    if ( con_energies( biter1, kiter, jspn, ibw ) .le. cliph .and. &
+                         con_energies( biter1, kiter, jspn, ibw ) .ge. val_energies( biter2, kiter, ispn, ibw ) ) then
+!                      con_fac = 1.0_DP - 1.0_dp / ( exp( ( con_energies( biter1, kiter, jspn, ibw ) - efermi )*itemp ) + 1.0_dp )
+                      con_fac = fermi_occ( con_energies( biter1, kiter, jspn, ibw ), efermi, sys%occupationValue )
+                      if( sys%disable_intraband .and. &
+                         ( biter2+sys%brange(1) .eq. biter1+sys%brange(3) ) ) then
+                        ! above: if we are disabling intraband AND the bands are equal
+                        !  then we skip this section setting allow
+                        if( myid .eq. root ) write(6,*) 'SKIP', kiter, biter2, biter1
+                      else
+                        allow%valr( biter1, biter2, kiter, ibeta, ibw ) = sqrt(abs(con_fac-val_fac))
+                        if( ibw .eq. 1 ) then
+                          allow%vali( biter1, biter2, kiter, ibeta, ibw ) = 1.0_dp
+                        else
+                          allow%vali( biter1, biter2, kiter, ibeta, ibw ) = -1.0_dp
+                        endif
+                      endif
+                    endif
+                  enddo
+                endif
+              enddo ! biter1
+            enddo ! kiter
+          enddo ! j
+        enddo ! i
+      enddo ! ibw
+    elseif( metal .or. sys%nspn .ne. 1 ) then
     
       do ibw = 1, sys%nbw
       ibeta = 0
@@ -1093,5 +1134,19 @@ module OCEAN_val_energy
   end subroutine find_fermi
 
 
+pure real(dp) function fermi_occ(e, mu, kT)
+  real(dp), intent(in) :: e, mu, kT
+  real(dp) :: x
+
+  x = (e - mu) / kT
+
+  if( x .gt. 40.0_dp ) then
+    fermi_occ = exp(-x)
+  elseif( x .lt. -40.0_dp ) then
+    fermi_occ = 1.0_dp - exp(x)
+  else
+    fermi_occ = 1.0_dp / ( exp(x) + 1.0_dp )
+  endif
+end function fermi_occ
 
 end module OCEAN_val_energy
