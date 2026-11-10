@@ -1,3 +1,4 @@
+.PHONY: all clean install
 OBJGEN = zobj/limel.o zobj/jimel.o zobj/getylm.o zobj/getprefs.o \
          zobj/nbseprjprep.o zobj/nbseprjnproj.o zobj/fancyvector.o
 OBJELS = $(OBJGEN) zobj/elssub.o zobj/confmel.o zobj/sphidriver.o
@@ -34,7 +35,7 @@ zobj/jtvsub.o: zf90/jtvsub.f90
 	$(COMP) -c $(OPTS) -o zobj/jtvsub.o zf90/jtvsub.f90
 zobj/limel.o: zf90/limel.f90
 	$(COMP) -c $(OPTS) -o zobj/limel.o zf90/limel.f90
-zobj/sdjtv.o: zf90/sdjtv.f90
+zobj/sdjtv.o: zf90/sdjtv.f90 zf90/sphsetnx.h.f90 zf90/sphsetx.h.f90
 	$(COMP) -c $(OPTS) -o zobj/sdjtv.o zf90/sdjtv.f90
 zobj/sphidriver.o: zf90/sphidriver.f90 zf90/sphsetnx.h.f90 zf90/sphsetx.h.f90
 	$(COMP) -c $(OPTS) -o zobj/sphidriver.o zf90/sphidriver.f90
@@ -49,8 +50,6 @@ zobj/fancyvector.o: zf90/fancyvector.f90
 
 
 install:
-	cp zexe/melcalc.x $(INSTDIR)/
-	cp zexe/dotter.x $(INSTDIR)/
 	cp zexe/meljtv.x $(INSTDIR)/
 
 clean:

@@ -1,4 +1,4 @@
-
+.PHONY: all clean install
 all: zexe/avg.x zexe/builder.x zexe/pawsetup.x zexe/mkrbfile_mult.x zexe/mpi_avg.x
 
 BUILDER = zobj/builder.o zobj/realu2.o zobj/vcbder2.o zobj/getomega.o zobj/mkvipt.o zobj/rdp.o \
@@ -16,8 +16,8 @@ zexe/mkrbfile_mult.x: $(MKRB)
 zexe/mkrbfile.x: zobj/mkrbfile.o zobj/mkcmesh.o zobj/snatch.o
 	$(COMP) $(OPTS) zobj/mkrbfile.o zobj/mkcmesh.o zobj/snatch.o -o zexe/mkrbfile.x
 
-zexe/pawsetup.x: pawsetup.f90 zobj/periodic.o ../../Modules/ocean_phys.mod 
-	$(COMP) $(OPTS) -I../../Modules pawsetup.f90 zobj/periodic.o ../../Modules/ocean_phys.o -o zexe/pawsetup.x 
+zexe/pawsetup.x: pawsetup.f90 zobj/periodic.o ../../Modules/ocean_phys.o
+	$(COMP) $(OPTS) -I../../Modules pawsetup.f90 zobj/periodic.o ../../Modules/ocean_phys.o -o zexe/pawsetup.x
 
 zexe/avg.x: $(AVG)
 	$(COMP) $(OPTS) $(AVG) -o zexe/avg.x
@@ -58,10 +58,9 @@ zobj/mkrbfile_mult.o: mkrbfile_mult.f90
 zobj/mkvipt.o: mkvipt.f90
 	$(COMP) $(OPTS) -c mkvipt.f90 -o zobj/mkvipt.o
 
-zobj/pawsetup.o: pawsetup.f90 periodic.mod
-	$(COMP) $(OPTS) -c pawsetup.f90 -o zobj/pawsetup.o
+zobj/pawsetup.o: pawsetup.f90 zobj/periodic.o ../../Modules/ocean_phys.o
+	$(COMP) $(OPTS) -I../../Modules -c pawsetup.f90 -o zobj/pawsetup.o
 
-periodic.mod: zobj/periodic.o
 zobj/periodic.o: periodic.f90
 	$(COMP) $(OPTS) -c periodic.f90 -o zobj/periodic.o
 
@@ -93,14 +92,17 @@ zobj/mkmesh.o: mkmesh.f90
 	$(COMP) $(OPTS) -c mkmesh.f90 -o zobj/mkmesh.o
 
 install:
-	cp zexe/avg.x $(INSTDIR)/
 	cp zexe/mpi_avg.x $(INSTDIR)/
-	cp zexe/builder.x $(INSTDIR)/
-	cp zexe/pawsetup.x $(INSTDIR)/
-	cp zexe/mkrbfile_mult.x $(INSTDIR)/
 	cp hqp lqp gauss16 $(INSTDIR)/
+
+# Rebuild the producer if its module file is missing.
+periodic.mod: zobj/periodic.o
+zobj/periodic.o: $(if $(wildcard periodic.mod),,FORCE)
+
+.PHONY: FORCE
+FORCE:
 
 clean:
 	rm -f zobj/*.o
 	rm -f zexe/*.x
-	rm -f *__genmod.f90 *__genmod.mod
+	rm -f *__genmod.f90 *__genmod.mod periodic.mod

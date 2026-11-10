@@ -1,3 +1,4 @@
+.PHONY: all clean install
 OPTS = -fast  #-YDEALLOC=ALL
 #COMP = /usr/local/usr/absoft32/bin/f90
 COMP = pgf90
@@ -49,7 +50,6 @@ zobj/snatch.o: zf90/snatch.f90
 	$(COMP) $(OPTS) -c zf90/snatch.f90 -o zobj/snatch.o
 
 install:
-	cp zexe/cks.x $(INSTDIR)/
 
 clean:
 	rm -f zobj/*.o

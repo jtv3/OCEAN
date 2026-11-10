@@ -1,5 +1,10 @@
 include ../../Makefile.arch
 
+.PHONY: all clean install database
+
+# The database generator shares oncv.inp and writes both output formats.
+.NOTPARALLEL:
+
 AUX = json/ONCVPSP-PBE-PDv0.4-standard.json json/ONCVPSP-PBE-PDv0.4-stringent.json \
 			json/ONCVPSP-PW-PDv0.4-standard.json json/ONCVPSP-PW-PDv0.4-stringent.json \
 			json/ONCVPSP-PBEsol-PDv0.4-standard.json json/ONCVPSP-PBEsol-PDv0.4-stringent.json \
@@ -15,7 +20,7 @@ PSP  = ONCVPSP-PW-PDv0.4.upf.json ONCVPSP-PW-PDv0.4.psp8.json \
 all: $(PSP)
 
 clean:
-	rm $(PSP) 
+	rm -f $(PSP)
 
 install:
 	cp *.json $(INSTDIR)

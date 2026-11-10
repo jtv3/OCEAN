@@ -1,8 +1,9 @@
 include ../Makefile.arch
 
-SCRIPTS = dendip.pl par_dendip.pl bvecs.pl gvecs2.pl ofermi.pl OBF_wfn.pl qe_dendip.pl qe_data_file.pl jdftx_dendip.pl prep.pl
-FILESF90 = nelectron.x rhoofg.x wfconvert.x
-WFCONVERTGW_OBJS = wfconvert_gw.o headpar.o grabwf.o wfsubs.o
+.PHONY: all clean install instdev
+
+SCRIPTS = prep.pl
+FILESF90 = rhoofg.x
 FFT_WRAPPER = ../Modules/FFT_wrapper.o -I../Modules ../Modules/jlmfft.o
 
 ifdef __HAVE_IOTK
@@ -18,24 +19,24 @@ endif
 .SUFFIXES: .f .x .f90
 
 all: wfconvert.x nelectron.x rhoofg.x 
-	cd src; make
+	cd src && $(MAKE)
 
 install:
 	cp $(SCRIPTS) $(FILESF90) $(INSTDIR)
-	cd src; make install
+	cd src && $(MAKE) install
 
 instdev:
 	for F in $(SCRIPTS); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
 	for F in $(FILESF90); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
 
 clean: 
-	rm -f *.o *.x *__genmod.mod *__genmod.f90
-	cd src; make clean
+	rm -f *.o *.x *.mod *__genmod.f90
+	cd src && $(MAKE) clean
 
 .f.x:
 	$(FC) $(OPTIONS) -o $*.x $*.f
 
-rhoofg.x: rho2.f90 
+rhoofg.x: rho2.f90 ../Modules/FFT_wrapper.o ../Modules/jlmfft.o
 	$(FC) $(OPTIONS) rho2.f90 $(FFT_WRAPPER) $(FFTWL) -o rhoofg.x 
 
 nelectron.x: nelectron.f90
@@ -44,14 +45,8 @@ nelectron.x: nelectron.f90
 wfconvert.x: $(WFCONVERT_OBJS) wfconvert.o
 	$(MPIFORT) $(OPTIONS) $(WFCONVERT_OBJS) wfconvert.o -o wfconvert.x $(LIB_IOTK) 
 
-wfconvert_gw.x: $(WFCONVERTGW_OBJS)
-	$(FC) $(OPTIONS) $(WFCONVERTGW_OBJS) -o wfconvert_gw.x
-
 wfconvert.o: wfconvert2.f90 $(WFCONVERT_OBJS)
 	$(FC) $(OPTIONS) -c wfconvert2.f90 -o wfconvert.o
-
-wfconvert_gw.o: wfconvert_gw.f90
-	$(FC) $(OPTIONS) -c wfconvert_gw.f90 -o wfconvert_gw.o
 
 headpar.o: headpar.f90
 	 $(FC) $(OPTIONS) -c headpar.f90 -o headpar.o

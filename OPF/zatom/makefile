@@ -1,3 +1,4 @@
+.PHONY: all clean install
 #
 HFOBJS = zobj/hfhead.o zobj/hfhead2.o zobj/hfneck.o \
          zobj/mkkbfile.o zobj/hfpa.o zobj/getpot.o zobj/sig.o \
@@ -30,10 +31,6 @@ HFOBJS = zobj/hfhead.o zobj/hfhead2.o zobj/hfneck.o \
          \
          zobj/continuum.o zobj/projaug.o zobj/trck.o
 #
-#        zobj/fillinpaw.o zobj/egripper2.o 
-#        zobj/fipfront.o zobj/pwavesetter.o zobj/newdumper.o 
-#        zobj/formfkgknll.o zobj/coullgen.o zobj/formmelnll.o zobj/powlgen.o
-#        zobj/coreload.o zobj/pawload.o zobj/geticore.o
 #
 HPOBJS = zobj/hartpart.o
 BTOBJS = zobj/backtran.o
@@ -56,22 +53,24 @@ install:
 clean:
 	rm -f zobj/*.o zexe/*.x *__genmod.???
 
-ALLOBJS = $(HFOBJS) $(HPOBJS) $(BTOBJS) $(FTOBJS) $(KBOBJS) $(LLOBJS) $(RTOBJS)$(RTOBJ2) $(SEOBJS) $(VSOBJS) $(VTOBJS)
+
+ALLOBJS = $(HFOBJS) $(HPOBJS) $(BTOBJS) $(FTOBJS) $(KBOBJS) $(LLOBJS) $(RTOBJS) $(RTOBJ2) $(SEOBJS) $(VSOBJS) $(VTOBJS) \
+         zobj/analyze.o zobj/egripper2.o zobj/ffiler.o zobj/getanu.o zobj/getfg.o zobj/geticore.o \
+         zobj/hfpaold.o zobj/hpload.o zobj/mason.o zobj/melwriter.o zobj/rinvert.o
 
 ALLEXE =  zexe/ftrns.x zexe/hfk.x zexe/kbft.x zexe/separate.x zexe/ffiler.x \
      zexe/analyze.x zexe/vsubtract.x zexe/vtransf.x zexe/llscreen.x \
      zexe/backtran.x zexe/rtabber.x zexe/mason.x zexe/rtab2.x zexe/vamend.x zexe/hartpart.x
 
-
-$(ALLOBJS): | zobj
-
 zobj:
 	@mkdir -p $@
 
-$(ALLEXE): | zexe
-
 zexe:
 	@mkdir -p $@
+
+$(ALLOBJS): | zobj
+
+$(ALLEXE): | zexe
 #
 zexe/hartpart.x: zobj/hartpart.o
 	$(COMP) -o zexe/hartpart.x zobj/hartpart.o
@@ -182,7 +181,7 @@ zobj/spherbes.o: zstd/spherbes.f
 #
 zobj/backtran.o: zf77/backtran.f
 	$(COMP) $(OPTS) -c zf77/backtran.f -o zobj/backtran.o
-zobj/hfca.o: zf77/hfca.f ./alfinv.h
+zobj/hfca.o: zf77/hfca.f zf77/alfinv.h
 	$(COMP) $(OPTS) -c zf77/hfca.f -o zobj/hfca.o
 zobj/hfgi.o: zf77/hfgi.f
 	$(COMP) $(OPTS) -c zf77/hfgi.f -o zobj/hfgi.o
@@ -190,9 +189,9 @@ zobj/hfhead.o: zf90/hfhead.f90
 	$(COMP) $(OPTS) -c zf90/hfhead.f90 -o zobj/hfhead.o
 zobj/hfhead2.o: zf77/hfhead2.f
 	$(COMP) $(OPTS) -c zf77/hfhead2.f -o zobj/hfhead2.o
-zobj/hfneck.o: zf77/hfneck.f ./alfinv.h
+zobj/hfneck.o: zf77/hfneck.f zf77/alfinv.h
 	$(COMP) $(OPTS) -c zf77/hfneck.f -o zobj/hfneck.o
-zobj/hfpa.o: zf77/hfpa.f ./alfinv.h
+zobj/hfpa.o: zf77/hfpa.f zf77/alfinv.h
 	$(COMP) $(OPTS) -c zf77/hfpa.f -o zobj/hfpa.o
 zobj/hfrg.o: zf77/hfrg.f
 	$(COMP) $(OPTS) -c zf77/hfrg.f -o zobj/hfrg.o
@@ -219,7 +218,7 @@ zobj/sean4.o: zf77/sean4.f
 	$(COMP) $(OPTS) -c zf77/sean4.f -o zobj/sean4.o
 zobj/sean5.o: zf77/sean5.f
 	$(COMP) $(OPTS) -c zf77/sean5.f -o zobj/sean5.o
-zobj/getpot.o: zf77/getpot.f ./alfinv.h
+zobj/getpot.o: zf77/getpot.f zf77/alfinv.h
 	$(COMP) $(OPTS) -c zf77/getpot.f -o zobj/getpot.o
 zobj/sig.o: zf77/sig.f
 	$(COMP) $(OPTS) -c zf77/sig.f -o zobj/sig.o
@@ -269,7 +268,7 @@ zobj/integi.o: zf90/integi.f90
 	$(COMP) $(OPTS) -c zf90/integi.f90 -o zobj/integi.o
 zobj/intego.o: zf90/intego.f90
 	$(COMP) $(OPTS) -c zf90/intego.f90 -o zobj/intego.o
-zobj/setxkdk.o: zf90/setxkdk.f90 ./alfinv.h
+zobj/setxkdk.o: zf90/setxkdk.f90 zf90/alfinv.h
 	$(COMP) $(OPTS) -c zf90/setxkdk.f90 -o zobj/setxkdk.o
 #
 zobj/ppload.o: zf90/ppload.f90
@@ -283,37 +282,17 @@ zobj/intval.o: zstd/intval.f90
 #
 zobj/freshen.o: zf90/freshen.f90
 	$(COMP) $(OPTS) -c zf90/freshen.f90 -o zobj/freshen.o
-zobj/pwavesetter.o: zf90/pwavesetter.f90
-	$(COMP) $(OPTS) -c zf90/pwavesetter.f90 -o zobj/pwavesetter.o
 zobj/optradf.o: zf90/optradf.f90
 	$(COMP) $(OPTS) -c zf90/optradf.f90 -o zobj/optradf.o
-zobj/fipfront.o: zf90/fipfront.f90
-	$(COMP) $(OPTS) -c zf90/fipfront.f90 -o zobj/fipfront.o
-zobj/formfkgknll.o: zf90/formfkgknll.f90
-	$(COMP) $(OPTS) -c zf90/formfkgknll.f90 -o zobj/formfkgknll.o
-zobj/formmelnll.o: zf90/formmelnll.f90
-	$(COMP) $(OPTS) -c zf90/formmelnll.f90 -o zobj/formmelnll.o
-zobj/pawload.o: zf90/pawload.f90
-	$(COMP) $(OPTS) -c zf90/pawload.f90 -o zobj/pawload.o
-zobj/coreload.o: zf90/coreload.f90
-	$(COMP) $(OPTS) -c zf90/coreload.f90 -o zobj/coreload.o
-zobj/coullgen.o: zf90/coullgen.f90
-	$(COMP) $(OPTS) -c zf90/coullgen.f90 -o zobj/coullgen.o
-zobj/powlgen.o: zf90/powlgen.f90
-	$(COMP) $(OPTS) -c zf90/powlgen.f90 -o zobj/powlgen.o
 zobj/normangnodes.o: zf90/normangnodes.f90
 	$(COMP) $(OPTS) -c zf90/normangnodes.f90 -o zobj/normangnodes.o
 zobj/reconstruct.o: zf90/reconstruct.f90
 	$(COMP) $(OPTS) -c zf90/reconstruct.f90 -o zobj/reconstruct.o
-zobj/newdumper.o: zf90/newdumper.f90
-	$(COMP) $(OPTS) -c zf90/newdumper.f90 -o zobj/newdumper.o
 zobj/projdumper.o: zf90/projdumper.f90
 	$(COMP) $(OPTS) -c zf90/projdumper.f90 -o zobj/projdumper.o
 zobj/escanprep.o: zf90/escanprep.f90
 	$(COMP) $(OPTS) -c zf90/escanprep.f90 -o zobj/escanprep.o
 #
-zobj/fillinpaw.o: zf90/fillinpaw.f90
-	$(COMP) $(OPTS) -c zf90/fillinpaw.f90 -o zobj/fillinpaw.o
 zobj/spartanfip.o: zf90/spartanfip.f90
 	$(COMP) $(OPTS) -c zf90/spartanfip.f90 -o zobj/spartanfip.o
 #
@@ -356,9 +335,9 @@ zobj/orbcont.o: zf90/orbcont.f90
 	$(COMP) $(OPTS) -c zf90/orbcont.f90 -o zobj/orbcont.o
 zobj/addpot.o: zf90/addpot.f90
 	$(COMP) $(OPTS) -c zf90/addpot.f90 -o zobj/addpot.o
-zobj/setqmm.o: zf90/setqmm.f90 ./alfinv.h
+zobj/setqmm.o: zf90/setqmm.f90 zf90/alfinv.h
 	$(COMP) $(OPTS) -c zf90/setqmm.f90 -o zobj/setqmm.o
-zobj/getplead.o: zf90/getplead.f90 ./alfinv.h
+zobj/getplead.o: zf90/getplead.f90 zf90/alfinv.h
 	$(COMP) $(OPTS) -c zf90/getplead.f90 -o zobj/getplead.o
 #
 zobj/elsolve.o: zf90/elsolve.f90
@@ -367,5 +346,5 @@ zobj/bcsolve.o: zf90/bcsolve.f90
 	$(COMP) $(OPTS) -c zf90/bcsolve.f90 -o zobj/bcsolve.o
 zobj/radnorm.o: zf90/radnorm.f90
 	$(COMP) $(OPTS) -c zf90/radnorm.f90 -o zobj/radnorm.o
-zobj/augment.o: zf90/augment.f90
+zobj/augment.o: zf90/augment.f90 zf90/alfinv.h
 	$(COMP) $(OPTS) -c zf90/augment.f90 -o zobj/augment.o

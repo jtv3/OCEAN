@@ -1,21 +1,22 @@
+.PHONY: all clean install
 include ../Makefile.arch
 
 COMP = $(FC)
 OPTS = $(OPTIONS)
 
 all:
-	cd zxipp; make "COMP = $(COMP)" "OPTS = $(OPTS)"
-	cd zf90;  make "COMP = $(COMP)" "OPTS = $(OPTS)" "MPIFORT = $(MPIFORT)"
-	cd src; make
+	cd zxipp && $(MAKE) "COMP = $(COMP)" "OPTS = $(OPTS)"
+	cd zf90 &&  $(MAKE) "COMP = $(COMP)" "OPTS = $(OPTS)" "MPIFORT = $(MPIFORT)"
+	cd src && $(MAKE)
 
 install:
-	cd zxipp; make "INSTDIR = $(INSTDIR)" install
-	cd zf90;  make "INSTDIR = $(INSTDIR)" install
-	cd src; make "INSTDIR = $(INSTDIR)" install
-	cp screen.pl $(INSTDIR)/ 
+	cd zxipp && $(MAKE) "INSTDIR = $(INSTDIR)" install
+	cd zf90 &&  $(MAKE) "INSTDIR = $(INSTDIR)" install
+	cd src && $(MAKE) "INSTDIR = $(INSTDIR)" install
+	cp screen.pl $(INSTDIR)/
 
 clean:
-	cd zxipp; make clean
-	cd zf90; make clean
-	cd src; make clean
+	cd zxipp && $(MAKE) clean
+	cd zf90 && $(MAKE) clean
+	cd src && $(MAKE) clean
 

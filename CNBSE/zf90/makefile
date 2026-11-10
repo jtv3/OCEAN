@@ -1,4 +1,4 @@
-COMP=pgf90
+.PHONY: all clean install
 OPTS=-fast
 
 all: zexe/getnval.x zexe/spec_average.x
@@ -19,8 +19,6 @@ zobj/spec_average.o: spec_average.f90
 	$(COMP) $(OPTS) -c spec_average.f90 -o zobj/spec_average.o
 
 install:
-	cp zexe/getnval.x $(INSTDIR)/
-	cp zexe/spec_average.x $(INSTDIR)/
 
 clean:
 	rm -f zobj/*.o

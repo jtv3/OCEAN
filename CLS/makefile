@@ -1,14 +1,15 @@
+.PHONY: all clean install
 include ../Makefile.arch
 
 COMP = $(FC)
 OPTS = $(OPTIONS)
 
 all:
-	cd src; make 
+	cd src && $(MAKE)
 
 install:
 	cp cls.pl $(INSTDIR)/ 
-	cd src; make install
+	cd src && $(MAKE) install
 
 clean:
-	cd src; make clean
+	cd src && $(MAKE) clean

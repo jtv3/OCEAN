@@ -1,3 +1,4 @@
+.PHONY: all clean install
 #OPTS = -openmp -openmp-report2 -opt-mem-bandwidth1  -traceback -static-intel
 OPTS = -fopenmp -m64 -ffree-line-length-none -O2 -mtune=corei7 
 #-YDEALLOC=ALL
@@ -10,22 +11,19 @@ CAINM = zobj/cainmultip.o zobj/cainxact.o zobj/getabb.o zobj/haydump.o zobj/fgac
         zobj/newgetylm.o zobj/newgetprefs.o zobj/cainmhsetup.o zobj/newthreey.o zobj/intval.o zobj/redtrid.o \
         zobj/getomega.o zobj/elsdch.o zobj/gamfcn.o zobj/cinv.o zobj/cainchact.o zobj/cainxrvmult.o zobj/loadux.o \
         zobj/cainnqtoxr.o zobj/cainxrtonq.o zobj/jlmfft.o zobj/seprep.o zobj/loaduxzerotau.o 
-#zobj/radialcorehole.o
 #
 all: zexe/cainmultip.x
 #
 zexe/cainmultip.x: $(CAINM)
 	$(COMP) $(OPTS) $(CAINM) -o zexe/cainmultip.x
 #
-zobj/radialcorehole.o: zf90/radialcorehole.f90
-	$(COMP) $(OPTS) -c zf90/radialcorehole.f90 -o zobj/radialcorehole.o
 zobj/seprep.o: zf90/seprep.f90
 	$(COMP) $(OPTS) -c zf90/seprep.f90 -o zobj/seprep.o
 zobj/cainchact.o: zf90/cainchact.f90
 	$(COMP) $(OPTS) -c zf90/cainchact.f90 -o zobj/cainchact.o
 zobj/cainmhsetup.o: zf90/cainmhsetup.f90 zf90/sphsetnx.h.f90 zf90/sphsetx.h.f90
 	$(COMP) $(OPTS)  -c zf90/cainmhsetup.f90 -o zobj/cainmhsetup.o
-zobj/cainmultip.o: zf90/cainmultip.f90 zf90/cainmusetupx.f90 zf90/nbsemusetupnx.h
+zobj/cainmultip.o: zf90/cainmultip.f90 zf90/cainmusetupx.f90 zf90/cainmusetupnx.h
 	$(COMP) $(OPTS) -c zf90/cainmultip.f90 -o zobj/cainmultip.o
 zobj/cainnqtoxr.o: zf90/cainnqtoxr.f90
 	$(COMP) $(OPTS) -c zf90/cainnqtoxr.f90 -o zobj/cainnqtoxr.o
@@ -45,8 +43,6 @@ zobj/fgact.o: zf90/fgact.f90
 	$(COMP) $(OPTS) -c zf90/fgact.f90 -o zobj/fgact.o
 zobj/fsassem.o: zf90/fsassem.f90
 	$(COMP) $(OPTS) -c zf90/fsassem.f90 -o zobj/fsassem.o
-zobj/fshift.o: zf90/fshift.f90
-	$(COMP) $(OPTS) -c zf90/fshift.f90 -o zobj/fshift.o
 zobj/gamfcn.o: zf90/gamfcn.f90
 	$(COMP) $(OPTS) -c zf90/gamfcn.f90 -o zobj/gamfcn.o
 zobj/getabb.o: zf90/getabb.f90
@@ -89,13 +85,12 @@ zobj/sizereport.o: zf90/sizereport.f90
 	$(COMP) $(OPTS) -c zf90/sizereport.f90 -o zobj/sizereport.o
 zobj/soact.o: zf90/soact.f90
 	$(COMP) $(OPTS) -c zf90/soact.f90 -o zobj/soact.o
-zobj/soprep.o: zf90/soprep.f90
+zobj/soprep.o: zf90/soprep.f90 zf90/sphsetnx.h.f90 zf90/sphsetx.h.f90
 	$(COMP) $(OPTS) -c zf90/soprep.f90 -o zobj/soprep.o
 zobj/vtor.o: zf90/vtor.f90
 	$(COMP) $(OPTS) -c zf90/vtor.f90 -o zobj/vtor.o
 
 install:
-	cp zexe/cainmultip.x $(INSTDIR)
 
 clean:
 	rm -f zobj/*.o

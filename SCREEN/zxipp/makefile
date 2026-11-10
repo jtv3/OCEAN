@@ -1,4 +1,4 @@
-#
+.PHONY: all clean install
 OBXPL = zobj/xippsin_lm.o zobj/xeqtanx.o zobj/rinvert.o zobj/mkvipt.o zobj/intval.o
 OBXPB = zobj/xippsin_box.o zobj/xeqtanx.o zobj/rinvert.o zobj/mkvipt.o zobj/intval.o
 OBXP2 = zobj/xippsin.o zobj/xeqtanx.o zobj/rinvert.o zobj/mkvipt.o zobj/intval.o
@@ -28,7 +28,7 @@ zexe/dressximunu.x: $(OBDRX)
 #
 zobj/xippsin_box.o: zf90/xipp_box.f90
 	$(COMP) $(OPTS) -c zf90/xipp_box.f90 -o zobj/xippsin_box.o
-zobj/xippsin_lm.o: zf90/xippsin_lm.f90
+zobj/xippsin_lm.o: zf90/xippsin_lm.f90 zf90/tanqr.f90
 	$(COMP) $(OPTS) -c zf90/xippsin_lm.f90 -o zobj/xippsin_lm.o
 zobj/getomega.o: zf90/getomega.f90
 	$(COMP) $(OPTS) -c zf90/getomega.f90 -o zobj/getomega.o
@@ -72,7 +72,7 @@ zobj/getc2.o: zf90/getc2.f
 	$(COMP) $(OPTS) -c zf90/getc2.f -o zobj/getc2.o
 
 install:
-	cp $(TARGETS) $(INSTDIR)/
+	cp zexe/vhommod.x zexe/rscombine.x $(INSTDIR)/
 
 clean:
 	rm -f zobj/*.o

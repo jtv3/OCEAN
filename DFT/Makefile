@@ -1,7 +1,9 @@
 include ../Makefile.arch
 
+.PHONY: all clean install instdev
+
 FILES   = avec.x kgen2.x makecoords.x makeatompp.x makeacell.x 
-SCRIPTS = AbinitDriver.pl pp.pl par_ab2.pl qe2rhoofr.pl dft.pl qeband.pl qe62band.pl QEdriver.pl ABIdriver.pl
+SCRIPTS = qe2rhoofr.pl dft.pl QEdriver.pl ABIdriver.pl
 AUX = $(ABINIT_EXE) $(CUT3D_EXE) $(PW_EXE) $(PP_EXE) $(PH_EXE)
 
 
@@ -9,18 +11,23 @@ AUX = $(ABINIT_EXE) $(CUT3D_EXE) $(PW_EXE) $(PP_EXE) $(PH_EXE)
 
 all: $(FILES) 
 
+# Rebuild the producer if its module file is missing.
+periodic.mod: periodic.o
+periodic.o: $(if $(wildcard periodic.mod),,FORCE)
+
+.PHONY: FORCE
+FORCE:
+
 clean:
-	rm -f $(FILES)
+	rm -f $(FILES) 
 	rm -f periodic.mod periodic.o
 
 install:
-	cp $(SCRIPTS) $(FILES) $(AUX) $(INSTDIR)
+	cp $(SCRIPTS) $(AUX) $(INSTDIR)
 
 instdev:
 	for F in $(SCRIPTS); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
-	for F in $(FILES); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
 	for F in $(AUX); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;
-	ln -fs $(PWD)/kgen.x $(INSTDEVDIR)
 
 .f.x:
 	$(FC) $(OPTIONS) -o $*.x $*.f

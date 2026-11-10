@@ -1,3 +1,4 @@
+.PHONY: all clean install
 all: zexe/fhi2eric.x
 
 zexe/fhi2eric.x: zf90/fhi2eric.f90
