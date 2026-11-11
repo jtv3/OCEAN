@@ -9,3 +9,4 @@ install:
 
 clean:
 	rm -f zexe/*.x
+	rm -rf zexe/*.x.dSYM

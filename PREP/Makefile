@@ -31,6 +31,7 @@ instdev:
 
 clean: 
 	rm -f *.o *.x *.mod *__genmod.f90
+	rm -rf *.x.dSYM
 	cd src && $(MAKE) clean
 
 .f.x:

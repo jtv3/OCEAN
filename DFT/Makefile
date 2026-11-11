@@ -21,6 +21,7 @@ FORCE:
 clean:
 	rm -f $(FILES) 
 	rm -f periodic.mod periodic.o
+	rm -rf *.x.dSYM
 
 install:
 	cp $(SCRIPTS) $(AUX) $(INSTDIR)

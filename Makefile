@@ -51,6 +51,11 @@ install:
 	chmod 644 $(INSTDIR)/*
 	chmod 755 $(INSTDIR)/*.pl
 	chmod 755 $(INSTDIR)/*.x
+	for F in abinit cut3d; do \
+	  if [ -f "$(INSTDIR)/$$F" ]; then \
+	    chmod 755 "$(INSTDIR)/$$F" || exit 1; \
+	  fi; \
+	done
 
 instdev:
 	for F in $(SCRIPTS) $(AUX); do ln -fs $(PWD)/$$F $(INSTDEVDIR); done;

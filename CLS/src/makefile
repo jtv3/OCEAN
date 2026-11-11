@@ -39,6 +39,7 @@ getomega.o: getomega.f90
 
 clean:
 	rm -f coreExchange.o coreScreen.o $(OBJS) *.mod corex.x corescreen.x
+	rm -rf *.x.dSYM
 
 install:
 	cp corex.x $(INSTDIR)/

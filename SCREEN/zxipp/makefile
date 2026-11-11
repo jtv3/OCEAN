@@ -77,3 +77,4 @@ install:
 clean:
 	rm -f zobj/*.o
 	rm -f zexe/*.x
+	rm -rf zexe/*.x.dSYM

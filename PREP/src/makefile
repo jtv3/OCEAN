@@ -63,3 +63,4 @@ FORCE:
 
 clean:
 	rm -f *.mod *.o ocean_prep.x
+	rm -rf *.x.dSYM

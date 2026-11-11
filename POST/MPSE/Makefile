@@ -56,6 +56,7 @@ clean:
 	rm -f *.o
 	rm -f *.mod
 	rm -f $(binaries)
+	rm -rf *.x.dSYM
 
 .f90.o:
 	$(FC) -c $(FLAGS) $(@:.o=.f90)

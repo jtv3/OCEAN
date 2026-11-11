@@ -300,6 +300,7 @@ FORCE:
 
 clean:
 	rm -f *.o *.mod ocean.x o_spect.x rixs_plane.x rixsPlane.x
+	rm -rf *.x.dSYM
 
 install:
 	cp ocean.x o_spect.x rixs_plane.x $(INSTDIR)/

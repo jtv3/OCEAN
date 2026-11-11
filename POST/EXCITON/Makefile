@@ -43,3 +43,4 @@ FORCE:
 
 clean:
 	rm -f *.o *.x *.mod
+	rm -rf *.x.dSYM

@@ -52,6 +52,7 @@ install:
 
 clean:
 	rm -f zobj/*.o zexe/*.x *__genmod.???
+	rm -rf zexe/*.x.dSYM
 
 
 ALLOBJS = $(HFOBJS) $(HPOBJS) $(BTOBJS) $(FTOBJS) $(KBOBJS) $(LLOBJS) $(RTOBJS) $(RTOBJ2) $(SEOBJS) $(VSOBJS) $(VTOBJS) \

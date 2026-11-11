@@ -105,4 +105,5 @@ FORCE:
 clean:
 	rm -f zobj/*.o
 	rm -f zexe/*.x
+	rm -rf zexe/*.x.dSYM
 	rm -f *__genmod.f90 *__genmod.mod periodic.mod

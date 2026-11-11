@@ -151,6 +151,7 @@ FORCE:
 
 clean:
 	rm -f *.mod *.o screen_driver.x
+	rm -rf *.x.dSYM
 
 
 cacorr.o: cacorr.f
