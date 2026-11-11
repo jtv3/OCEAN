@@ -96,6 +96,7 @@ module screen_centralPotential
     
     do j = i+1, PotSize
       if( znlPotentials( j )%z .eq. Z ) then
+        i = j
         PotPointers => znlPotentials( j )
         return
       endif
@@ -111,7 +112,7 @@ module screen_centralPotential
     integer, intent( inout ) :: ierr
     !
     integer, allocatable :: tmp_znl( :, : )
-    integer :: znlLength, i
+    integer :: znlLength, i, j
     !
     ! load up potentials to be screened later
     ! 2000 should be more than enough for the entire periodic table at the moment
@@ -133,7 +134,9 @@ module screen_centralPotential
 !    call screen_centralPotential_loadAll( znlLength, znlPotentials, tmp_znl, ierr )
 !    if( ierr .ne. 0 ) return
     do i = 1, znlLength
-      call screen_centralPotential_loadSingle( znlPotentials( i ), tmp_znl( :, i ), ierr )
+      j = 1
+      if( myid .eq. root ) j = i
+      call screen_centralPotential_loadSingle( znlPotentials( i ), tmp_znl( :, j ), ierr )
       if( ierr .ne. 0 ) return
     enddo
     deallocate( tmp_znl )
