@@ -1,4 +1,4 @@
-! Copyright (C) 2017 - 2019 OCEAN collaboration
+! Copyright (C) 2017 - 2022, 2026 OCEAN collaboration
 !
 ! This file is part of the OCEAN project and distributed under the terms 
 ! of the University of Illinois/NCSA Open Source License. See the file 
@@ -9,7 +9,7 @@
 !
 !
 module screen_wvfn_converter
-  use AI_kinds, only : DP
+  use AI_kinds, only : DP, I8
 
   implicit none
   private
@@ -36,7 +36,7 @@ module screen_wvfn_converter
                              screen_paral_NumLocalSites, screen_paral_isMySite
     use screen_system, only : system_parameters, params
     use screen_sites, only : site, pinfo
-    use ocean_dft_files, only : odf_nprocPerPool
+    use ocean_dft_files, only : odf_nprocPerPool, odf_npool
     use ocean_mpi
     use screen_timekeeper, only : screen_tk_start, screen_tk_stop
     
@@ -53,11 +53,45 @@ module screen_wvfn_converter
 
     integer :: isite, i
     integer :: recvSize, siteSize
+#ifdef MPI
+    integer :: nPools
+    integer( MPI_ADDRESS_KIND ) :: tagLimit
+    integer( I8 ) :: maxTag
+    logical :: hasTagLimit
+#endif
 
     ! Step 1 is figuring out wave funtion storage
     ! if we are splitting the wvfns and we don't have real-only/gamma-point routines
     i = 1
     if( params%isSplit .and. .not. params%isGamma ) i = 2
+#ifdef MPI
+    nPools = odf_npool()
+    if( params%nkpts .le. 0 .or. params%nspin .le. 0 .or. nPools .le. 0 ) then
+      if( myid .eq. root ) write(6,*) 'Invalid k-point, spin, or reader-pool count in wavefunction converter'
+      ierr = -1
+      return
+    endif
+
+    ! Predefined attributes are guaranteed on MPI_COMM_WORLD, not the Cartesian comm.
+    call MPI_COMM_GET_ATTR( MPI_COMM_WORLD, MPI_TAG_UB, tagLimit, hasTagLimit, ierr )
+    if( ierr .ne. 0 ) return
+    if( .not. hasTagLimit ) then
+      if( myid .eq. root ) then
+        write(6,*) 'MPI_TAG_UB unavailable in wavefunction converter.'
+        write(6,*) 'Error is programming bug, failed MPI_INIT, or non-funcitoning MPI'
+      endif
+      ierr = -1
+      return
+    endif
+
+    maxTag = ( ( int( params%nkpts, I8 ) * int( params%nspin, I8 ) - 1_I8 ) &
+             / int( nPools, I8 ) ) * int( i, I8 ) + int( i - 1, I8 )
+    if( maxTag .gt. int( tagLimit, I8 ) .or. maxTag .gt. int( huge(0), I8 ) ) then
+      if( myid .eq. root ) write(6,*) 'Wavefunction converter tag exceeds integer or MPI limit:', maxTag, tagLimit
+      ierr = -1
+      return
+    endif
+#endif
     ! This is currently larger than it needs to be
     recvSize = params%nspin * params%nkpts * odf_nprocPerPool() * i
 
@@ -186,11 +220,11 @@ module screen_wvfn_converter
 #ifdef MPI_F08
                           MPI_REQUEST, &
 #endif
-                          MPI_DOUBLE_COMPLEX, MPI_DOUBLE_PRECISION, comm
+                          MPI_DOUBLE_COMPLEX, MPI_DOUBLE_PRECISION, MPI_REQUEST_NULL, comm
     use screen_system, only : system_parameters, params
     use screen_sites, only : site
     use screen_wavefunction, only : screen_wvfn, screen_wvfn_returnWavefunctionDims
-    use ocean_dft_files, only : odf_nprocPerPool, odf_getPoolIndex, odf_getBandsForPoolID, odf_returnGlobalID
+    use ocean_dft_files, only : odf_nprocPerPool, odf_npool, odf_getPoolIndex, odf_getBandsForPoolID, odf_returnGlobalID
     integer, intent( in ) :: isite
     type( site ) :: current_site
 #ifdef MPI_F08
@@ -202,12 +236,13 @@ module screen_wvfn_converter
 
 
     integer :: ikpt, ispin, npts, i, j, itag, iwvfn, dims(2)
-    integer :: nprocPerKpt, poolIndex, targetID, num_bands, start_band, poolID
+    integer :: nprocPerKpt, poolIndex, targetID, num_bands, start_band, poolID, nPools
 
 #ifndef MPI
     recv_list(:) = 0
 #else
 
+    recv_list(:) = MPI_REQUEST_NULL
     dims(:) = screen_wvfn_returnWavefunctionDims( current_site%wvfn )
 
 !    write(1000+myid,*) 'Running swl_postSiteRecvs'
@@ -216,26 +251,25 @@ module screen_wvfn_converter
 !    flush(1000+myid)
     
     nprocPerKpt = odf_nprocPerPool()
+    nPools = odf_npool()
 !    npts = size( current_site%wvfn%wvfn, 1 )
     npts = dims(1)
+    ! Match the sender's skipped messages without referencing empty arrays.
+    if( npts .eq. 0 ) return
 
     ! if we are splitting the wvfns and we don't have real-only/gamma-point routines
     iwvfn = 1
     if( params%isSplit .and. .not. params%isGamma ) iwvfn = 2
 
-!    itag = ( isite - 1 ) * params%nkpts * params%nspin * iwvfn
-    
     i = 0
     j = 0
     do ispin = 1, params%nspin
       do ikpt = 1, params%nkpts
         i = i + 1
 
-!        itag = ( isite - 1 ) * ( ikpt + ( ispin - 1 ) * params%nkpts ) &
-!             + ( ispin - 1 ) * params%nkpts + ikpt
-        ! later switch this to incrementing
-        itag = ( isite - 1 ) * params%nkpts * params%nspin * iwvfn &
-             + ( ispin - 1 ) * params%nkpts * iwvfn + ( ikpt - 1 ) * iwvfn
+        ! Source ranks identify pools; sites reuse tags in posting order.
+        itag = int( ( ( int( ispin - 1, I8 ) * int( params%nkpts, I8 ) + int( ikpt - 1, I8 ) ) &
+                    / int( nPools, I8 ) ) * int( iwvfn, I8 ) )
 
         poolIndex = odf_getPoolIndex( ispin, ikpt )
         start_band = 1
@@ -291,6 +325,7 @@ module screen_wvfn_converter
     use screen_paral, only : site_parallel_info, screen_paral_siteIndexID2procID
     use screen_timekeeper, only : screen_tk_start, screen_tk_stop
     use screen_opf
+    use ocean_dft_files, only : odf_npool
 
     type( site_parallel_info ), intent( in ) :: pinfo
     integer, intent( in ) :: ikpt, ispin, ngvecs, nbands, nsites, natoms
@@ -311,7 +346,7 @@ module screen_wvfn_converter
     real(DP) :: kpoints(3), qcart(3), fakeq(3)
 !    integer :: uofxDims(3), boundaries(3,2)
     integer :: isite, j, isend, itag, destID, iwvfn, nthreads
-    integer :: npts, nProcsPerPool, iproc, nbandChunk, iband, nbandUse
+    integer :: npts, nProcsPerPool, iproc, nbandChunk, iband, nbandUse, nPools
     integer :: pts_start, num_pts, band_start, num_band, kpts_start, num_kpts
     integer :: lmin, lmax, nproj, l, nprojSite, nprojMax, itarg
     integer, allocatable :: atomLookup(:,:,:)
@@ -334,6 +369,7 @@ module screen_wvfn_converter
 
     iwvfn = 1
     if( params%isSplit .and. .not. params%isGamma ) iwvfn = 2
+    nPools = odf_npool()
 
     qcart(:) = 0.0_DP
     do j = 1, 3
@@ -348,6 +384,7 @@ module screen_wvfn_converter
 
     nprocsPerPool = pinfo%nprocs
     allocate( send_list( nsites * nprocsPerPool * iwvfn ) ) !, typeList( 0:nprocsPerPool, nsites ) )
+    send_list(:) = MPI_REQUEST_NULL
     isend = 0
 
 
@@ -531,10 +568,9 @@ module screen_wvfn_converter
       call screen_tk_stop( "swl_DoAugment" )
   
       call screen_tk_start( "swl_convertAndSend_Send" )
-!      itag = ( isite - 1 ) * ( ikpt + ( ispin - 1 ) * params%nkpts ) &
-!           + ( ispin - 1 ) * params%nkpts + ikpt
-      itag = ( isite - 1 ) * params%nkpts * params%nspin * iwvfn &
-           + ( ispin - 1 ) * params%nkpts * iwvfn + ( ikpt - 1 ) * iwvfn
+      ! Source ranks identify pools; sites reuse tags in posting order.
+      itag = int( ( ( int( ispin - 1, I8 ) * int( params%nkpts, I8 ) + int( ikpt - 1, I8 ) ) &
+                  / int( nPools, I8 ) ) * int( iwvfn, I8 ) )
       do iproc = 0, nprocsPerPool - 1
         isend = isend + 1
         destID = screen_paral_siteIndexID2procID( pinfo, isite, iproc )
