@@ -41,7 +41,7 @@ module screen_paral
 
 
   subroutine screen_paral_init( n_sites, pinfo, ierr )
-    use OCEAN_mpi, only : myid, comm, nproc, MPI_SUCCESS
+    use OCEAN_mpi, only : myid, root, comm, nproc, MPI_SUCCESS
     ! This might be needed later for F08?, MPI_COMM_SPLIT, MPI_COMM_RANK, MPI_COMM_SIZE
     !
     integer, intent( in ) :: n_sites
@@ -52,7 +52,19 @@ module screen_paral
 !    integer, parameter :: primes( rank_primes ) = (/ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29 /)
     integer :: test_size
 
+    if( n_sites .le. 0 ) then
+      if( myid .eq. root ) write( 6, * ) 'Invalid number of SCREEN sites: ', n_sites
+      ierr = -1
+      return
+    endif
+
     call how_many_groups( n_sites, nproc, pinfo%num_groups )
+    if( pinfo%num_groups .lt. 1 .or. pinfo%num_groups .gt. nproc ) then
+      if( myid .eq. root ) write( 6, * ) 'Invalid number of SCREEN groups: ', pinfo%num_groups, &
+                                         ' for MPI processes: ', nproc
+      ierr = -1
+      return
+    endif
     !
     pinfo%nprocs = nproc / pinfo%num_groups
     pinfo%total_procs = pinfo%num_groups * pinfo%nprocs

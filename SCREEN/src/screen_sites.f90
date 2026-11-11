@@ -158,6 +158,7 @@ module screen_sites
     enddo
 
     call screen_paral_init( n_sites, pinfo, ierr )
+    if( ierr .ne. 0 ) return
 
     do i = 1, n_sites
       call screen_wvfn_init( pinfo, all_sites( i )%grid, all_sites( i )%wvfn, i, ierr )
@@ -253,6 +254,7 @@ module screen_sites
     enddo
 
     call screen_paral_init( n_sites, pinfo, ierr )
+    if( ierr .ne. 0 ) return
 
     do i = 1, n_sites 
       call screen_wvfn_init( pinfo, all_sites( i )%grid, all_sites( i )%wvfn, i, ierr )
