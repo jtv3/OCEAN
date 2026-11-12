@@ -121,6 +121,7 @@ module screen_centralPotential
     else
       allocate( tmp_znl( 3, 1 ), stat=ierr )
     endif
+    if( ierr .ne. 0 ) return
     call screen_centralPotential_prepAll( tmp_znl, znlLength, ierr )
     if( ierr .ne. 0 ) return
     if( myid .eq. root ) then
@@ -270,7 +271,8 @@ module screen_centralPotential
     if( myid_ .ne. root_ ) then
 !      write(6,*) 'pot_share'
 !      write(6,*) intArray(:)
-      allocate( pot%pot( intArray(4) ), pot%rad( intArray(4) ) )
+      allocate( pot%pot( intArray(4) ), pot%rad( intArray(4) ), stat=ierr )
+      if( ierr .ne. 0 ) return
       pot%z = intArray(1)
       pot%n = intArray(2)
       pot%l = intArray(3)
@@ -291,9 +293,10 @@ module screen_centralPotential
     integer, intent( out ) :: n
     integer, intent( inout ) :: ierr
 
-    integer :: i, maxSize, j
+    integer :: i, maxSize, ios
 
     n = 0
+    ierr = 0
     if( screen_system_mode() .eq. 'grid' ) then
       n = 1
       znl(1,1) = 0
@@ -310,31 +313,28 @@ module screen_centralPotential
     endif
 
     maxSize = size( znl, 2 )
-    open( unit=99, file='edgelist', form='formatted', status='old' )
-
+    open( unit=99, file='edgelist', form='formatted', status='old', iostat=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, maxSize
-      read(99,*,iostat=j) znl(1:3, i )
-      if( j .lt. 0 ) then
-        n = i - 1
-        close( 99 )
-#ifdef MPI
-        call MPI_BCAST( n, 1, MPI_INTEGER, root, comm, ierr )
-#endif
+      read(99,*,iostat=ios) znl(1:3, i )
+      if( ios .lt. 0 ) exit
+      if( ios .gt. 0 ) then
+        ierr = ios
         return
-      elseif( j .gt. 0 ) then
-        ierr = j
-!        return
       endif
     enddo
-    close( 99 )
+    if( i .gt. maxSize ) then
+      write(6,'(A,I8)') 'Too many unique edges! Greater than: ', maxSize
+      ierr = 1
+      return
+    endif
+    n = i - 1
+    close( 99, iostat=ierr )
+    if( ierr .ne. 0 ) return
 
-    ! if this isn't here the other mpi will hang above ...
 #ifdef MPI
-        call MPI_BCAST( n, 1, MPI_INTEGER, root, comm, ierr )
+    call MPI_BCAST( n, 1, MPI_INTEGER, root, comm, ierr )
 #endif
-
-    write(6,'(A,I8)') 'Too many unique edges! Greater than: ', maxSize
-    ierr = 1
   end subroutine screen_centralPotential_prepAll
 
   subroutine screen_centralPotential_newScreenShell( pot, newPot, rad, ierr, width )
@@ -362,7 +362,8 @@ module screen_centralPotential
       return
     endif
 
-    allocate( newPot%pot( size( pot%pot ) ), newPot%rad( size( pot%rad ) ) )
+    allocate( newPot%pot( size( pot%pot ) ), newPot%rad( size( pot%rad ) ), stat=ierr )
+    if( ierr .ne. 0 ) return
     newPot%rad(:) = pot%rad(:)
 
     ! shell radii are rounded to 0.01. If smaller than it is zero
@@ -437,6 +438,7 @@ module screen_centralPotential
     pot%z = z
     pot%n = n
     pot%l = l
+    ierr = 0
 !    pot%deltaR = 0.02_DP
     
     if( z .lt. 0 ) then
@@ -461,7 +463,8 @@ module screen_centralPotential
       write(6,*) 'Failed to open ', fileName, ' with error ', ierr
       return
     endif
-    rewind( 99 )
+    rewind( fh, iostat=ierr )
+    if( ierr .ne. 0 ) return
 
     maxLength = 4000
     curLength = 1
@@ -473,7 +476,12 @@ module screen_centralPotential
 
       call doRead( fh, curLength, MaxLength, tmpRad, tmpPot, ierr )
 
+      if( ierr .ne. 0 ) return
       if( curLength .lt. 0 ) goto 11
+      if( curLength .eq. 0 ) then
+        ierr = 1
+        return
+      endif
 
       allocate( tmp( maxLength ), stat=ierr )
       if( ierr .ne. 0 ) return
@@ -485,6 +493,7 @@ module screen_centralPotential
       tmp(:) = tmpRad(:)
       deallocate( tmpRad )
       allocate( tmpRad( maxLength*2 ), stat=ierr )
+      if( ierr .ne. 0 ) return
       tmpRad(1:maxLength) = tmp(:)
 
       curLength = maxLength + 1
@@ -497,14 +506,17 @@ module screen_centralPotential
 
 11  continue
     curLength = abs( curLength )
+    if( curLength .lt. 1 ) then
+      ierr = 1
+      return
+    endif
     allocate( pot%rad( curLength ), pot%pot( curLength ), stat=ierr )
     if( ierr .ne. 0 ) return
     pot%rad(:) = tmpRad(1:curLength)
     pot%pot(:) = tmpPot(1:curLength)
     deallocate( tmpPot, tmpRad )
-
-    close( fh )
-
+    close( fh, iostat=ierr )
+    if( ierr .ne. 0 ) return
     write(6,* ) z, n, l
     write(6,*) curLength
     write(6,*) pot%rad(1), pot%pot(1)

@@ -109,7 +109,8 @@ module screen_chi
         write(1000+myid,'(A,1X,E24.16,1X,E24.16)') Prefix, intInduced(:)
 #endif
         
-        call screen_chi_writeW( mySite%grid, Prefix, FullW, FullW0, Ninduced, N0induced )
+        call screen_chi_writeW( mySite%grid, Prefix, FullW, FullW0, Ninduced, N0induced, ierr )
+        if( ierr .ne. 0 ) return
 
         call screen_centralPotential_freePot( Pot )
       enddo
@@ -122,57 +123,75 @@ module screen_chi
   end subroutine screen_chi_makeW
     
 
-  subroutine screen_chi_writeW( grid, prefix, FullW, FullW0, Ninduced, N0induced )
+  subroutine screen_chi_writeW( grid, prefix, FullW, FullW0, Ninduced, N0induced, ierr )
     use screen_grid, only : sgrid
 !    use ocean_mpi, only : root, myid
     type( sgrid ), intent( in ) :: grid
     character( len=40 ), intent( in ) :: prefix
     real(DP), intent( in ), dimension(:,:) :: FullW, FullW0, Ninduced, N0induced
+    integer, intent( inout ) :: ierr
 
     real(DP), allocatable :: transpW(:,:)
     integer :: i
     character(len=40) :: fmtstmt
     character(len=80) :: filnam
 
-    allocate( transpW( size( FullW, 2 ), size( FullW, 1 ) ) )
+    allocate( transpW( size( FullW, 2 ), size( FullW, 1 ) ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
     write(fmtstmt, '("(", I0, "(1x,1e15.8))")' ) size( FullW, 2 )+1
 
     write( filnam, '(A,A)' ) trim( prefix ), 'vind'
     transpW = transpose( FullW )
-    open(unit=99,file=filnam,form='formatted',status='unknown')
-    rewind( 99 )
+    open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, grid%nr
-      write( 99, fmtstmt ) grid%rad(i), transpW( :, i )
+      write( 99, fmtstmt, IOSTAT=ierr ) grid%rad(i), transpW( :, i )
+      if( ierr .ne. 0 ) return
     enddo
-    close( 99 )
+    close( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'vind0'
     transpW = transpose( FullW0 )
-    open(unit=99,file=filnam,form='formatted',status='unknown')
-    rewind( 99 )
+    open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, grid%nr
-      write( 99, fmtstmt ) grid%rad(i), transpW( :, i )
+      write( 99, fmtstmt, IOSTAT=ierr ) grid%rad(i), transpW( :, i )
+      if( ierr .ne. 0 ) return
     enddo
-    close( 99 )
+    close( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'nind'
     transpW = transpose( Ninduced )
-    open(unit=99,file=filnam,form='formatted',status='unknown')
-    rewind( 99 )
+    open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, grid%nr
-      write( 99, fmtstmt ) grid%rad(i), transpW( :, i )
+      write( 99, fmtstmt, IOSTAT=ierr ) grid%rad(i), transpW( :, i )
+      if( ierr .ne. 0 ) return
     enddo
-    close( 99 )
+    close( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'nind0'
     transpW = transpose( N0induced )
-    open(unit=99,file=filnam,form='formatted',status='unknown')
-    rewind( 99 )
+    open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, grid%nr
-      write( 99, fmtstmt ) grid%rad(i), transpW( :, i )
+      write( 99, fmtstmt, IOSTAT=ierr ) grid%rad(i), transpW( :, i )
+      if( ierr .ne. 0 ) return
     enddo
-    close( 99 )
+    close( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     deallocate( transpW )
 
@@ -325,7 +344,8 @@ module screen_chi
     endif
             
 
-    allocate( ipiv( fullsize ) )
+    allocate( ipiv( fullsize ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     call DGETRF( fullsize, fullsize, temp, fullsize, ipiv, ierr)
 !    call DPOTRF( 'L', fullsize, temp, fullsize, ierr )
     if( ierr .ne. 0 ) then
@@ -338,13 +358,16 @@ module screen_chi
     !! of DPOTRF as the full chi matrix for reuse?
 
 !    call DPOTRI( 'L', fullsize, temp, fullsize, ierr )
-    allocate( work( 1 ) )
+    allocate( work( 1 ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     lwork = -1
     call DGETRI( fullsize, temp, fullsize, ipiv, work, lwork, ierr )
+    if( ierr .ne. 0 ) return
     lwork = work( 1 )
     lwork = max( lwork, fullsize )
     deallocate( work )
-    allocate( work( lwork ) )
+    allocate( work( lwork ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     call DGETRI( fullsize, temp, fullsize, ipiv, work, lwork, ierr )
     if( ierr .ne. 0 ) then
       write(6,*) 'DPOTRI failed:', ierr

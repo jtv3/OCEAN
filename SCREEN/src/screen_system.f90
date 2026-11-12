@@ -429,8 +429,12 @@ module screen_system
     call MPI_BCAST( psys%natoms, 1, MPI_INTEGER, root, comm, ierr )
     if( ierr .ne. MPI_SUCCESS ) return
     !
-    if( myid .ne. root ) allocate( psys%atom_list( psys%natoms ) )
-    allocate( temp_names( psys%natoms ), temp_coords( 3, psys%natoms ) )
+    if( myid .ne. root ) then
+      allocate( psys%atom_list( psys%natoms ), stat=ierr )
+      if( ierr .ne. 0 ) return
+    endif
+    allocate( temp_names( psys%natoms ), temp_coords( 3, psys%natoms ), stat=ierr )
+    if( ierr .ne. 0 ) return
     
     if( myid .eq. root ) then
       do ii = 1, psys%natoms
@@ -462,19 +466,23 @@ module screen_system
   subroutine load_calcParams( ierr )
     integer, intent( inout ) :: ierr
     !
-    integer :: ignoreErrors
+    integer :: ignoreErrors, close_ierr
     logical :: ex
 
-    ignoreErrors = 0
+    ierr = 0
 
     calcParams%lbounds(:) = 0
     inquire( file='screen.lmax', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.lmax', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%lbounds(2)
-      close( 99 )
+      open( unit=99, file='screen.lmax', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%lbounds(2)
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
       if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.lmax ', ignoreErrors
+        write(6,*) 'WARNING: Could not read screen.lmax; using default'
+        calcParams%lbounds(2) = 0
       endif
     endif
 !    if( calcParams%lbounds(1) .lt. 0 ) then
@@ -490,11 +498,15 @@ module screen_system
     calcParams%appx = 'RPA'
     inquire( file='screen.appx', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.appx', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%appx
-      close( 99 )
+      open( unit=99, file='screen.appx', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%appx
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
       if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.appx ', ignoreErrors
+        write(6,*) 'WARNING: Could not read screen.appx; using default'
+        calcParams%appx = 'RPA'
       endif
     endif
 
@@ -512,25 +524,32 @@ module screen_system
     calcParams%allAug = .false.
     inquire( file='screen.allaug', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.allaug', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%allAug
-      close( 99 )
+      open( unit=99, file='screen.allaug', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%allAug
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
       if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.allaug ', ignoreErrors
+        write(6,*) 'WARNING: Could not read screen.allaug; using default'
+        calcParams%allAug = .false.
       endif
     endif
     if( calcParams%allAug ) write( 6, * ) 'Augmenting all atomic sites!'
 
+    calcParams%convertStyle = ''
     inquire( file='screen.convertstyle', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.convertstyle', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%convertStyle
-      close( 99 )
-      if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.convertstyle: ', ignoreErrors
+      open( unit=99, file='screen.convertstyle', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%convertStyle
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
       endif
-    else
-      calcParams%convertStyle = ''
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.convertstyle; using default'
+        calcParams%convertStyle = ''
+      endif
     endif
 
     select case ( calcParams%convertStyle )
@@ -541,16 +560,19 @@ module screen_system
         calcParams%convertStyle = 'real'
     end select
 
+    calcParams%chi0integrand = ''
     inquire( file='screen.chi0integrand', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.chi0integrand', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%chi0integrand
-      close( 99 )
-      if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.chi0integrand: ', ignoreErrors
+      open( unit=99, file='screen.chi0integrand', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%chi0integrand
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
       endif
-    else
-      calcParams%chi0Integrand = ''
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.chi0integrand; using default'
+        calcParams%chi0integrand = ''
+      endif
     endif
 
     select case ( calcParams%chi0Integrand )
@@ -561,16 +583,19 @@ module screen_system
         calcParams%chi0Integrand = 'half'
     end select
     
+    calcParams%inversionStyle = ''
     inquire( file='screen.inversionstyle', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.inversionstyle', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%inversionStyle
-      close( 99 )
-      if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.inversionstyle: ', ignoreErrors
+      open( unit=99, file='screen.inversionstyle', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%inversionStyle
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
       endif
-    else
-      calcParams%inversionStyle = ''
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.inversionstyle; using default'
+        calcParams%inversionStyle = ''
+      endif
     endif
 
     select case ( calcParams%inversionStyle )
@@ -581,16 +606,19 @@ module screen_system
         calcParams%inversionStyle = 'sinqr'
     end select
 
+    calcParams%mode = ''
     inquire( file='screen.mode', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.mode', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%mode
-      close( 99 )
-      if( ignoreErrors .ne. 0 ) then
-        write(6,*) 'Error reading screen.mode: ', ignoreErrors
+      open( unit=99, file='screen.mode', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%mode
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
       endif
-    else
-      calcParams%mode = ''
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.mode; using default'
+        calcParams%mode = ''
+      endif
     endif
     select case ( calcParams%mode )
       case( 'core', 'grid' )
@@ -600,28 +628,34 @@ module screen_system
         calcParams%mode = 'core'
     end select
 
+    calcParams%QuadOrder = 16
     inquire( file='screen.quadorder', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.quadorder', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%QuadOrder
-      close( 99 )
-    endif
-    if( ex .eqv. .false. .or. ignoreErrors .ne. 0 ) then
-      write( 6, * ) 'Using default for screen.quadorder!' 
-      write( 6, * ) '  screen.quadorder = 16'
-      calcParams%QuadOrder = 16
+      open( unit=99, file='screen.quadorder', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%QuadOrder
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.quadorder; using default'
+        calcParams%QuadOrder = 16
+      endif
     endif
       
+    calcParams%do_augment = .false.
     inquire( file='screen.augment', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.augment', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%do_augment
-      close( 99 )
-    endif
-    if( ex .eqv. .false. .or. ignoreErrors .ne. 0 ) then
-      write( 6, * ) 'Using default for screen.augment!'
-      write( 6, * ) '  screen.augment = false'
-      calcParams%do_augment = .false.
+      open( unit=99, file='screen.augment', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%do_augment
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.augment; using default'
+        calcParams%do_augment = .false.
+      endif
     endif
     ! augment is NOT compatible with grid
     if( calcParams%mode .eq. 'grid' .and. calcParams%do_augment ) then
@@ -633,18 +667,21 @@ module screen_system
       calcParams%do_augment = .false.
     endif
 
+    calcParams%vext = 'vc_bare'
     inquire( file='screen.vext', exist=ex )
     if( ex ) then
-      open( unit=99, file='screen.vext', form='formatted', status='old' )
-      read( 99, *, IOSTAT=ignoreErrors ) calcParams%vext
-      close( 99 )
-      write(6,'(A,A,A)') 'Using ', calcParams%vext, ' for core-screened potential'
+      open( unit=99, file='screen.vext', form='formatted', status='old', IOSTAT=ignoreErrors )
+      if( ignoreErrors .eq. 0 ) then
+        read( 99, *, IOSTAT=ignoreErrors ) calcParams%vext
+        close( 99, IOSTAT=close_ierr )
+        if( ignoreErrors .eq. 0 ) ignoreErrors = close_ierr
+      endif
+      if( ignoreErrors .ne. 0 ) then
+        write(6,*) 'WARNING: Could not read screen.vext; using default'
+        calcParams%vext = 'vc_bare'
+      endif
     endif
-    if( ex .eqv. .false. .or. ignoreErrors .ne. 0 ) then
-      write( 6, * ) 'Using default for screen.vext!'
-      write( 6, * ) '  screen.vext = vc_bare'
-      calcParams%vext = 'vc_bare'
-    endif
+    write(6,'(A,A,A)') 'Using ', calcParams%vext, ' for core-screened potential'
 
   end subroutine load_calcParams
 
@@ -839,38 +876,39 @@ module screen_system
   subroutine load_xyz( ierr )
     integer, intent( inout ) :: ierr
     !
-    integer :: ii 
+    integer :: ii
 
+    ierr = 0
     open( unit=99, file='xyz.wyck', form='formatted', status='old', IOSTAT=ierr )
     if( ierr .ne. 0 ) then
       write( 6, * ) 'FATAL ERROR: Failed to open xyz.wyck', ierr
       goto 111
     endif
     ii = 0
-    read( 99, *, IOSTAT=ierr, ERR=10 ) psys%natoms
+    psys%natoms = 0
+    read( 99, *, IOSTAT=ierr ) psys%natoms
+    if( ierr .ne. 0 ) then
+      write( 6, * ) 'FATAL ERROR: Trouble reading xyz.wyck atom count', ierr
+      goto 111
+    endif
     if( psys%natoms .gt. 0 ) then
       allocate( psys%atom_list( psys%natoms ), STAT=ierr )
     else
-      write( 6, * ) 'FATAL ERROR: Negative number of atoms in xyz.wyck', psys%natoms
+      write( 6, * ) 'FATAL ERROR: Nonpositive number of atoms in xyz.wyck', psys%natoms
       ierr = -1
     endif
     if( ierr .ne. 0 ) goto 111
 
     do ii = 1, psys%natoms
-      read( 99, *, IOSTAT=ierr, ERR=10 ) psys%atom_list( ii )%el_name, & 
+      read( 99, *, IOSTAT=ierr ) psys%atom_list( ii )%el_name, &
                                          psys%atom_list( ii )%reduced_coord( : )
+      if( ierr .ne. 0 ) then
+        write( 6, * ) 'FATAL ERROR: Trouble reading xyz.wyck atom', ii, ierr
+        goto 111
+      endif
     enddo
     close( 99, IOSTAT=ierr )
-    if( ierr .ne. 0 ) then
-      write( 6, * ) 'FATAL ERROR: Trouble closing xyz.wyck'
-      goto 111
-    endif
-
-10    continue
-    if( ierr .ne. 0 ) then
-      write( 6, * ) 'FATAL ERROR: Trouble reading xyz.wyck', ii
-      goto 111
-    endif
+    if( ierr .ne. 0 ) write( 6, * ) 'FATAL ERROR: Trouble closing xyz.wyck', ierr
 
 111 continue
     return

@@ -101,7 +101,8 @@ module screen_wvfn_converter
     write(1000+myid,*) 'recvSize, siteSize:', recvSize, siteSize
 #endif
 
-    allocate( recvArray( recvSize, siteSize ) )
+    allocate( recvArray( recvSize, siteSize ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     recvArray(:,:) = MPI_REQUEST_NULL
     i = 0
 
@@ -121,6 +122,7 @@ module screen_wvfn_converter
 
 #ifdef DEBUG
     call MPI_BARRIER( comm, ierr )
+    if( ierr .ne. 0 ) return
     write(6,*) 'Wait on RECVs'
 #endif
 
@@ -378,12 +380,15 @@ module screen_wvfn_converter
 
 
     ! Should be array of screen_wvfn objects
-    allocate( temp_wavefunctions( nsites ) )
-    allocate( atom_wavefunctions( natoms ) )
+    allocate( temp_wavefunctions( nsites ), STAT=ierr )
+    if( ierr .ne. 0 ) return
+    allocate( atom_wavefunctions( natoms ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
 
     nprocsPerPool = pinfo%nprocs
-    allocate( send_list( nsites * nprocsPerPool * iwvfn ) ) !, typeList( 0:nprocsPerPool, nsites ) )
+    allocate( send_list( nsites * nprocsPerPool * iwvfn ), STAT=ierr ) !, typeList( 0:nprocsPerPool, nsites ) )
+    if( ierr .ne. 0 ) return
     send_list(:) = MPI_REQUEST_NULL
     isend = 0
 
@@ -455,14 +460,17 @@ module screen_wvfn_converter
         if( nprojSite .gt. nprojMax ) nprojMax = nprojSite
 
       enddo
-      allocate( betaMatrix( nprojMax, nbandChunk, natoms ) )
+      allocate( betaMatrix( nprojMax, nbandChunk, natoms ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       allocate( atomLookup( uofx%dims(1), uofx%dims(2), uofx%dims(3) ), &
                 atomVec( 3, uofx%dims(1), uofx%dims(2), uofx%dims(3) ), &
-                umklapp( 3, uofx%dims(1), uofx%dims(2), uofx%dims(3) ) )
+                umklapp( 3, uofx%dims(1), uofx%dims(2), uofx%dims(3) ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       atomLookup(:,:,:) = 0
       call swl_atomMap( uofx%dims, natoms, all_atoms, psys%avecs, atomLookup, atomVec, umklapp )
     else
-      allocate( betaMatrix(0,0,0), atomLookup(0,0,0), atomVec(0,0,0,0), umklapp(0,0,0,0) )
+      allocate( betaMatrix(0,0,0), atomLookup(0,0,0), atomVec(0,0,0,0), umklapp(0,0,0,0), STAT=ierr )
+      if( ierr .ne. 0 ) return
     endif
 
     ! 1. preliminary OPF stuff
@@ -477,8 +485,8 @@ module screen_wvfn_converter
       uofx%isInitGrid = .false.
 
       call screen_tk_start( "swl_DoConvert" )
-!      call swl_doConvert( nbands, ngvecs, input_gvecs, input_uofg, uofx )
-      call swl_doConvert( nbandUse, ngvecs, input_gvecs, input_uofg(:,iband:), uofx )
+!      call swl_doConvert( nbands, ngvecs, input_gvecs, input_uofg, uofx, ierr )
+      call swl_doConvert( nbandUse, ngvecs, input_gvecs, input_uofg(:,iband:), uofx, ierr )
       if( ierr .ne. 0 ) return
       call screen_tk_stop( "swl_DoConvert" )
 
@@ -596,6 +604,7 @@ module screen_wvfn_converter
           if( params%isSplit ) then
             call MPI_ISEND( temp_wavefunctions(isite)%real_wvfn( pts_start, band_start, 1 ), 1, &
                             newType, destID, itag, comm, send_list( isend ), ierr )
+            if( ierr .ne. 0 ) return
             ! only have imaginary components if NOT gamma-point/real-only
             if( .not. params%isGamma ) then
 !              write(1000+myid,'(A,7(1X,I8))') '   Send converted:', destID, itag+1, pts_start, num_pts,  &
@@ -604,12 +613,14 @@ module screen_wvfn_converter
               isend = isend + 1
               call MPI_ISEND( temp_wavefunctions(isite)%imag_wvfn( pts_start, band_start, 1 ), 1, &
                               newType, destID, itag+1, comm, send_list( isend ), ierr )
+              if( ierr .ne. 0 ) return
             endif
           else
 !          call MPI_ISEND( temp_wavefunctions(isite)%wvfn( pts_start, band_start, 1 ), num_pts * num_band, &
 !                          MPI_DOUBLE_COMPLEX, destID, itag, comm, send_list( isend ), ierr )
             call MPI_ISEND( temp_wavefunctions(isite)%wvfn( pts_start, band_start, 1 ), 1, &
                             newType, destID, itag, comm, send_list( isend ), ierr )
+            if( ierr .ne. 0 ) return
           endif
         else
 !          write(6,*) 'Empty!', ikpt, ispin, iproc
@@ -1063,7 +1074,8 @@ module screen_wvfn_converter
 
     ! prep Ylm's
 !    write(6,*) 'YLM'
-    allocate( prefs(0:1000) )
+    allocate( prefs(0:1000), STAT=ierr )
+    if( ierr .ne. 0 ) return
     call getprefs( prefs )
     il = 0
     do l = lmin, lmax
@@ -1119,7 +1131,8 @@ module screen_wvfn_converter
 
         nl = il + 2*l ! no plus 1 because we are adding, ie l=0 we go from 1 to 1, l=1 we go from 2 to 4 (inclusive)
 !        write(6,*) l, il, nl
-        allocate( Smat( nproj, il:nl ), Cmat( nproj, il:nl ), TCmat( il:nl, nproj ) )
+        allocate( Smat( nproj, il:nl ), Cmat( nproj, il:nl ), TCmat( il:nl, nproj ), STAT=ierr )
+        if( ierr .ne. 0 ) return
         do i = il, nl
           do j = 1, nproj
 !            Smat( j, i ) = dot_product( psproj(1:ncutoff,j,l), waveByLM(1:ncutoff,i) )
@@ -1191,7 +1204,8 @@ module screen_wvfn_converter
 
 #ifdef DEBUGFULL
       i = 0
-      allocate(tmpForWrite(nproj))
+      allocate(tmpForWrite(nproj), STAT=ierr )
+      if( ierr .ne. 0 ) return
       do l = lmin, lmax
         do m = -l, l
           i = i + 1
@@ -1369,8 +1383,12 @@ module screen_wvfn_converter
 
         nl = il + 2*l ! no plus 1 because we are adding, ie l=0 we go from 1 to 1, l=1 we go from 2 to 4 (inclusive)
 !        write(6,*) l, il, nl
-        allocate( Smat( nproj, il:nl ), Cmat( nproj, il:nl ) )
-        if( present( imag_wvfn ) ) allocate( imag_Smat( nproj, il:nl ), imag_Cmat( nproj, il:nl ) )
+        allocate( Smat( nproj, il:nl ), Cmat( nproj, il:nl ), STAT=ierr )
+        if( ierr .ne. 0 ) return
+        if( present( imag_wvfn ) ) then
+          allocate( imag_Smat( nproj, il:nl ), imag_Cmat( nproj, il:nl ), STAT=ierr )
+          if( ierr .ne. 0 ) return
+        endif
 
         do i = il, nl
           do j = 1, nproj
@@ -1528,21 +1546,21 @@ module screen_wvfn_converter
           if( params%isGamma ) then
             ! if gamma, don't pass in imag_wvfn
             call realu2_split( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, &
-                               posn, wvfn%real_wvfn(:,iband,1) )
+                               posn, wvfn%real_wvfn(:,iband,1), ierr )
           else
             call realu2_split( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, &
-                               posn, wvfn%real_wvfn(:,iband,1), wvfn%imag_wvfn(:,iband,1) )
+                               posn, wvfn%real_wvfn(:,iband,1), ierr, wvfn%imag_wvfn(:,iband,1) )
           endif
         else
           call realu2( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, &
-                       posn, wvfn%wvfn(:,iband,1) )
+                       posn, wvfn%wvfn(:,iband,1), ierr )
         endif
 
       case('fft2')
         call swl_recpConvert( npts, nbands, uofx%cUofX, bvecs, avecs, qcart, posn, wvfn%wvfn(:,iband,1), ierr )
 
 !        call realu2( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, &
-!                     posn, wavefunctions )
+!                     posn, wavefunctions, ierr )
       case('fft3')
         ! fix the avecs/bvecs to properly convert posn to fractions of lattice vecs
         ierr = 1
@@ -1603,7 +1621,8 @@ module screen_wvfn_converter
   end subroutine swl_DoInterpolate
 
 
-  subroutine swl_doConvert( nbands, ngvecs, gvecs, uofg, uofx )
+  subroutine swl_doConvert( nbands, ngvecs, gvecs, uofg, uofx, ierr )
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: ngvecs, nbands
     integer, intent( in ) :: gvecs( :,: )
     complex(DP), intent( in ) :: uofg( :, : )
@@ -1612,13 +1631,13 @@ module screen_wvfn_converter
     if( uofx%dims(1) .lt. 1 ) return
 
     if( uofx%isReal ) then
-      call swl_doConvertGamma( nbands, ngvecs, gvecs, uofg, uofx%rUofX )
+      call swl_doConvertGamma( nbands, ngvecs, gvecs, uofg, uofx%rUofX, ierr )
     else 
-      call swl_doConvertComplex( nbands, ngvecs, gvecs, uofg, uofx%cUofX )
+      call swl_doConvertComplex( nbands, ngvecs, gvecs, uofg, uofx%cUofX, ierr )
     endif
   end subroutine swl_doConvert
 
-  subroutine swl_doConvertComplex( nbands, ngvecs, gvecs, uofg, uofx )
+  subroutine swl_doConvertComplex( nbands, ngvecs, gvecs, uofg, uofx, ierr )
     use ocean_dft_files, only : odf_isFullStorage
     use FFT_wrapper, only : fft_wrapper_init, fft_obj, FFT_wrapper_single, OCEAN_BACKWARD, &
                             FFT_wrapper_delete
@@ -1627,6 +1646,7 @@ module screen_wvfn_converter
 !    use iso_c_binding
 !    include 'fftw3.f03'
 !#endif
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: ngvecs, nbands
     integer, intent( in ) :: gvecs( :,: )
     complex(DP), intent( in ) :: uofg( :, : )
@@ -1643,7 +1663,8 @@ module screen_wvfn_converter
     if( dims(1) .lt. 1 ) return
     ! almost certainly need to reverse dims
 !    bplan = fftw_plan_many_dft( 3, dims, nbands, uofx, 
-    allocate( bplan( nbands ) )
+    allocate( bplan( nbands ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     ib = 1
     call FFT_wrapper_init( dims, bplan( ib ), uofx(:,:,:,ib), 1000+myid )
     do ib = 2, nbands
@@ -1706,7 +1727,7 @@ module screen_wvfn_converter
 !#endif
   end subroutine swl_doConvertComplex
 
-  subroutine swl_doConvertGamma( nbands, ngvecs, gvecs, uofg, uofx )
+  subroutine swl_doConvertGamma( nbands, ngvecs, gvecs, uofg, uofx, ierr )
     use ocean_dft_files, only : odf_isFullStorage
     use FFT_wrapper, only : fft_wrapper_init, fft_obj, FFT_wrapper_single, OCEAN_BACKWARD, &
                             FFT_wrapper_delete
@@ -1715,6 +1736,7 @@ module screen_wvfn_converter
 !    use iso_c_binding
 !    include 'fftw3.f03'
 !#endif
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: ngvecs, nbands
     integer, intent( in ) :: gvecs( :,: )
     complex(DP), intent( in ) :: uofg( :, : )
@@ -1724,6 +1746,7 @@ module screen_wvfn_converter
 !    type(C_PTR) :: bplan
     type(fft_obj) :: bplan
 
+    integer :: allocErr, threadErr
     integer :: dims(3)
     integer :: i, j, k, ig, ib
 
@@ -1734,7 +1757,8 @@ module screen_wvfn_converter
     ! almost certainly need to reverse dims
 !    bplan = fftw_plan_many_dft( 3, dims, nbands, uofx, 
 
-    allocate( tempC( dims(1), dims(2), dims(3) ) )
+    allocate( tempC( dims(1), dims(2), dims(3) ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 #if 0
 
     do ib = 1, nbands
@@ -1766,11 +1790,19 @@ module screen_wvfn_converter
 
 
 #ifdef __FFTW3
+    allocErr = 0
 !$    deallocate( tempC )
 !$OMP PARALLEL DEFAULT( NONE ) &
-!$OMP SHARED( bplan, nbands, ngvecs, dims, uofg, uofx, gvecs ) &
-!$OMP PRIVATE( ib, ig, i, j, k, tempC )
-!$    allocate( tempC( dims(1), dims(2), dims(3) ) )
+!$OMP SHARED( bplan, nbands, ngvecs, dims, uofg, uofx, gvecs, allocErr ) &
+!$OMP PRIVATE( ib, ig, i, j, k, tempC, threadErr )
+!$    allocate( tempC( dims(1), dims(2), dims(3) ), STAT=threadErr )
+!$    if( threadErr .ne. 0 ) then
+!$OMP CRITICAL
+!$      allocErr = max( allocErr, abs( threadErr ) )
+!$OMP END CRITICAL
+!$    endif
+!$OMP BARRIER
+!$    if( allocErr .eq. 0 ) then
 !$OMP DO
 #endif
     do ib = 1, nbands
@@ -1810,8 +1842,10 @@ module screen_wvfn_converter
     enddo
 #ifdef __FFTW3
 !$OMP END DO
-    deallocate( tempC )
+!$    endif
+    if( allocated( tempC ) ) deallocate( tempC )
 !$OMP END PARALLEL
+    ierr = allocErr
 #else
     deallocate( tempC )
 #endif
@@ -2362,6 +2396,7 @@ module screen_wvfn_converter
 
     real(DP) :: R, dx, dy, dz, rvec(3), invAvecs(3,3)
     integer :: dims(3), ib, ip, i, j, iy, iz, iyy, izz, offset
+    integer :: allocErr, threadErr
 
     allocate( pointMap( 3, npts ), distanceMap( 3, npts ), stat=ierr )
     if( ierr .ne. 0 ) return
@@ -2388,10 +2423,11 @@ module screen_wvfn_converter
 
 !    if( iband .eq. 1 ) write(1000+myid,'(A,3(I8,1X))') 'x-dims', dims(:)
 
+    allocErr = 0
 !$OMP PARALLEL DEFAULT( NONE ) &
 !$OMP SHARED( order, nbands, npts, pointMap, offset, dx, dy, dz, isInitGrid, uofx, Pgrid ) &
-!$OMP SHARED( wvfn, distanceMap, iband, dims, posn, invAvecs ) &
-!$OMP PRIVATE( P, QGrid, Q, RGrid ) &
+!$OMP SHARED( wvfn, distanceMap, iband, dims, posn, invAvecs, allocErr ) &
+!$OMP PRIVATE( P, QGrid, Q, RGrid, threadErr ) &
 !$OMP PRIVATE( ib, ip, iz, iy, izz, iyy, R, j, i ) &
 !$OMP PRIVATE( rvec )
 
@@ -2428,8 +2464,15 @@ module screen_wvfn_converter
 ! $OMP PRIVATE( P, QGrid, Q, RGrid ) &
 ! $OMP PRIVATE( ib, ip, iz, iy, izz, iyy, R )
 
-    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order) )
-!    if( ierr .ne. 0 ) return
+    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order), STAT=threadErr )
+    ! All threads must make the same decision before the band worksharing loop.
+    if( threadErr .ne. 0 ) then
+!$OMP CRITICAL
+      allocErr = max( allocErr, abs( threadErr ) )
+!$OMP END CRITICAL
+    endif
+!$OMP BARRIER
+    if( allocErr .eq. 0 ) then
 
 !$OMP DO SCHEDULE( STATIC )
     do ib = 1, nbands
@@ -2491,8 +2534,13 @@ module screen_wvfn_converter
     enddo ! ib
 !$OMP END DO NOWAIT
 
-    deallocate( P, Q, Qgrid, Rgrid )
+    endif
+    if( allocated( P ) ) deallocate( P )
+    if( allocated( Q ) ) deallocate( Q )
+    if( allocated( Qgrid ) ) deallocate( Qgrid )
+    if( allocated( Rgrid ) ) deallocate( Rgrid )
 !$OMP END PARALLEL
+    ierr = allocErr
 
     deallocate( pointMap, distanceMap )
 !    deallocate( P, Q, QGrid, RGrid, pointMap, distanceMap )
@@ -2593,7 +2641,8 @@ module screen_wvfn_converter
     ! The amount of computation and data fetching is greatly reduced if we can re-use, and the 
     ! re-used array is in order (whereas sometimes we'll wander around the PBC of the Bloch functions).
 !    allocate( isInitGrid( dims(1), dims(2), dims(3) ), PGrid( order, dims(1), dims(2), dims(3) ) )
-    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order) )
+    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order), STAT=ierr )
+    if( ierr .ne. 0 ) return
     dx = 1.0_dp / dims( 1 )
     dy = 1.0_dp / dims( 2 )
     dz = 1.0_dp / dims( 3 )
@@ -3463,7 +3512,8 @@ module screen_wvfn_converter
 
 
   subroutine realu2_split( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, &
-                     posn, real_wavefunctions, imag_wavefunctions )
+                     posn, real_wavefunctions, ierr, imag_wavefunctions )
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: ngvecs, npts, nbands
     integer, intent( in ) :: gvecs( 3, ngvecs )
     real(DP), intent( in ) :: bvecs(3,3), qcart(3)
@@ -3483,11 +3533,14 @@ module screen_wvfn_converter
 
     prefac = dzero
     blockFactor = min( blockParameter, ngvecs )
-    allocate( cos_phases( npts, blockFactor ), sin_phases( npts, blockFactor ) )
-    allocate( real_uofg( blockFactor, nbands ), imag_uofg( blockFactor, nbands ) )
+    allocate( cos_phases( npts, blockFactor ), sin_phases( npts, blockFactor ), STAT=ierr )
+    if( ierr .ne. 0 ) return
+    allocate( real_uofg( blockFactor, nbands ), imag_uofg( blockFactor, nbands ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
     ! Need to block this for large cells or the memory requirement is too big
-    allocate( gplusq2( 3, blockFactor ), phse2( npts, blockFactor ) )
+    allocate( gplusq2( 3, blockFactor ), phse2( npts, blockFactor ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do ig_start = 1, ngvecs, blockParameter
 
       ig_stop = min( ngvecs, ig_start+blockParameter - 1 )
@@ -3541,10 +3594,11 @@ module screen_wvfn_converter
 
 
   subroutine realu2( ngvecs, npts, nbands, uofg, gvecs, bvecs, qcart, & 
-                     posn, wavefunctions )
+                     posn, wavefunctions, ierr )
 #ifdef MKL_VML
     include 'mkl_vml.f90'
 #endif
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: ngvecs, npts, nbands
     integer, intent( in ) :: gvecs( 3, ngvecs )
     real(DP), intent( in ) :: bvecs(3,3), qcart(3)
@@ -3565,7 +3619,8 @@ module screen_wvfn_converter
 
     prefac = czero
     blockFactor = min( blockParameter, ngvecs )
-    allocate( phases( npts, blockFactor ) )
+    allocate( phases( npts, blockFactor ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
 
 #if 0
@@ -3598,7 +3653,8 @@ module screen_wvfn_converter
     enddo
 #else
     ! Need to block this for large cells or the memory requirement is too big
-    allocate( gplusq2( 3, blockFactor ), phse2( npts, blockFactor ) )
+    allocate( gplusq2( 3, blockFactor ), phse2( npts, blockFactor ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do ig_start = 1, ngvecs, blockFactor
 
       ig_stop = min( ngvecs, ig_start+blockFactor - 1 )
@@ -4489,15 +4545,18 @@ module screen_wvfn_converter
     real(DP) :: rad, phse,posn(3)
 
     
-    allocate( prefs(0:1000) )
+    allocate( prefs(0:1000), STAT=ierr )
+    if( ierr .ne. 0 ) return
     call getprefs( prefs )
     xchunk = min( 32, uofx%dims(1) )
 
     if( uofx%dims(1) .lt. 1 ) return
 
 
-    allocate( delta( xchunk, nbandUse ), projDelta( size(betaMAtrix,1) ) )
-    allocate( TD( nbandUse, xchunk ) )
+    allocate( delta( xchunk, nbandUse ), projDelta( size(betaMAtrix,1) ), STAT=ierr )
+    if( ierr .ne. 0 ) return
+    allocate( TD( nbandUse, xchunk ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     itarg = 0
 !    write(6,*) betaMatrix(:,1,2)
 

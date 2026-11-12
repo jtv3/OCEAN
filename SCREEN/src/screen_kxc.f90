@@ -60,7 +60,8 @@ module screen_kxc
     pf = 1.0_DP / (4.0_DP * pi_dp )
 
     npt = size( FullChi0, 1 )
-    allocate( tempMatrix( npt, npt ) )
+    allocate( tempMatrix( npt, npt ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
     curSite = 0
     do i = 1, isite
@@ -101,11 +102,13 @@ module screen_kxc
     if( myid .eq. 0 ) then
       write( fxcFile, '(A,I4.4)' ) 'testFxc', isite
 !      open( unit=99, file='testFxc' )
-      open( unit=99, file=fxcFile )
+      open( unit=99, file=fxcFile, IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, grid%nr
-        write(99,*) grid%rad( i ), ProjectedChi0Fxc(i,1,i,1), ProjectedChi0Fxc(i,1,i,1)*grid%rad(i)**2*grid%drad(i)
+        write(99,*, IOSTAT=ierr ) grid%rad( i ), ProjectedChi0Fxc(i,1,i,1), ProjectedChi0Fxc(i,1,i,1)*grid%rad(i)**2*grid%drad(i)
+        if( ierr .ne. 0 ) return
       enddo
-      close(99)
+      close(99, IOSTAT=ierr )
     endif
 #endif
 
@@ -139,7 +142,8 @@ module screen_kxc
       call MPI_BCAST( dims(:), 3, MPI_INTEGER, root, comm, ierr )
       if( ierr .ne. 0 ) return
 
-      allocate( RealSpaceBuffer( dims(1), dims(2), dims(3) ) )
+      allocate( RealSpaceBuffer( dims(1), dims(2), dims(3) ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 
       call rs_read( RealSpaceBuffer, ierr )
       if( ierr .ne. 0 ) return
@@ -149,20 +153,26 @@ module screen_kxc
       if( ierr .ne. 0 ) return
     endif
 
-    if( myid .ne. root ) allocate( RealSpaceBuffer( dims(1), dims(2), dims(3) ) )
+    if( myid .ne. root ) then
+      allocate( RealSpaceBuffer( dims(1), dims(2), dims(3) ), STAT=ierr )
+      if( ierr .ne. 0 ) return
+    endif
     call MPI_BCAST( RealSpaceBuffer, product(dims(:)), MPI_DOUBLE_PRECISION, root, comm, ierr )
+    if( ierr .ne. 0 ) return
 
 
     ! At this point all sites have real-space version of either den or Vxc
 
     npt = all_sites( 1 )%grid%Npt
     siteSize = screen_paral_NumLocalSites( pinfo, nsites )
-    allocate( DensityBySite( npt, siteSize ) )
+    allocate( DensityBySite( npt, siteSize ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     ! Loop over sites, if mysite && I am root of site do projection
 
 
     allocate( pgrid( intOrder, dims(1), dims(2), dims(3) ), &
-              isInitGrid( dims(1), dims(2), dims(3) ) )
+              isInitGrid( dims(1), dims(2), dims(3) ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     isInitGrid = .false.
     i = 0
     do isite = 1, nsites
@@ -176,7 +186,8 @@ module screen_kxc
 
     deallocate( pgrid, isInitGrid, RealSpaceBuffer )
 
-    allocate( localFxcBySite( npt, siteSize ) )
+    allocate( localFxcBySite( npt, siteSize ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
     ! Here we need to decide which approximation is being used
     ! Loop over all sites so we can pass in the grids for them that needs
@@ -234,7 +245,8 @@ module screen_kxc
         i = i + 1
 
         write(filnam, '(A,I4.4)' ) 'newden.', isite
-        open( unit=99, file=filnam, form='formatted', status='unknown' )
+        open( unit=99, file=filnam, form='formatted', status='unknown', IOSTAT=ierr )
+        if( ierr .ne. 0 ) return
         
         ipt = 0
         do inter = 1, all_sites( isite )%grid%ninter
@@ -249,11 +261,13 @@ module screen_kxc
             enddo
   
             call dftder3( su, nexc, vxc, kxc, fxc )
-            write(99,'(4E25.16)') all_sites( isite )%grid%drel( ipt ), su, su2, kxc
+            write(99,'(4E25.16)', IOSTAT=ierr ) all_sites( isite )%grid%drel( ipt ), su, su2, kxc
+            if( ierr .ne. 0 ) return
           enddo
         enddo
 
-        close( 99 )
+        close( 99, IOSTAT=ierr )
+        if( ierr .ne. 0 ) return
       endif
     enddo
     
@@ -304,9 +318,11 @@ module screen_kxc
     integer, intent( inout ) :: ierr
 
   ! For now
-    open(unit=99,file='nfft',form='formatted', status='old')
+    open(unit=99,file='nfft',form='formatted', status='old', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     read(99,*,IOSTAT=ierr ) dims(:)
-    close(99)
+    if( ierr .ne. 0 ) return
+    close(99, IOSTAT=ierr )
 
   end subroutine rs_read_initialize
 
@@ -324,17 +340,21 @@ module screen_kxc
     ni = size( RealSpaceBuffer, 1 )
   
     su = 0.0_DP
-    open( unit=99,file='rhoofr',form='formatted',status='old')
-    read(99,*) lineburn
+    open( unit=99,file='rhoofr',form='formatted',status='old', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    read(99,*, IOSTAT=ierr ) lineburn
+    if( ierr .ne. 0 ) return
     do k = 1, nk
       do j = 1, nj
         do i = 1, ni
-          read(99,*) dumint, dumint, dumint, RealSpaceBuffer(i,j,k)
+          read(99,*, IOSTAT=ierr ) dumint, dumint, dumint, RealSpaceBuffer(i,j,k)
+          if( ierr .ne. 0 ) return
           su = su + RealSpaceBuffer(i,j,k)
         enddo
       enddo
     enddo
-    close(99)
+    close(99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     write(6,*) 'rhoofr: ', su/dble(ni*nj*nk)
 
@@ -411,7 +431,8 @@ module screen_kxc
                         / real(dims( : ), DP )
     enddo
     
-    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order) )
+    allocate( P(order,order), QGrid(order,order), Q(order), RGrid(order), STAT=ierr )
+    if( ierr .ne. 0 ) return
 
     do ip = 1, npts
 

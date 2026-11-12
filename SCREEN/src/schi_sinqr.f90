@@ -43,7 +43,8 @@ module schi_sinqr
 
 !    write(6,*) 'mkvipt'
     allocate( vipt( nr ), basfcn( nr, nbasis ), qtab( nbasis ), rhs( nbasis ), & 
-              potfcn( nr, nbasis ), weight( nr ) )
+              potfcn( nr, nbasis ), weight( nr ), STAT=ierr )
+    if( ierr .ne. 0 ) return
 !    call Newmkvipt( npt, grid%drel, pot%rad, pot%pot, vipt )
     call Newmkvipt( nr, grid%rad, pot%rad, pot%pot, vipt )
 
@@ -254,7 +255,8 @@ module schi_sinqr
     endif
 
 
-    allocate( basfcn( npt, nbasis, nLM ), qtab( nbasis ) )
+    allocate( basfcn( npt, nbasis, nLM ), qtab( nbasis ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     !> At the moment we only do l = 0 for sinqr
     do ilm = 2, nLM
       basfcn( :, :, ilm ) = 0.0_DP
@@ -331,7 +333,8 @@ module schi_sinqr
       return
     endif
 
-    allocate( qtab( nbasis ), cosQtab( nbasis ) )
+    allocate( qtab( nbasis ), cosQtab( nbasis ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, nbasis
       qtab( i ) = PI_DP * real( i, DP ) / grid%rmax
       cosQtab( i ) = cos( real( i, DP ) * PI_DP )

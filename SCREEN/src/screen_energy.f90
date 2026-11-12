@@ -120,7 +120,8 @@ module screen_energy
     if( myid .eq. root ) then
       open( unit=99, file='efermiinrydberg.ipt', form='formatted', status='old', iostat=ierr, err=10 )
       read( 99, *, iostat=ierr ) efermi
-      close( 99 )
+      if( ierr .ne. 0 ) goto 10
+      close( 99, iostat=ierr )
     endif
 10  continue
 #ifdef MPI
@@ -145,6 +146,7 @@ module screen_energy
     nbands = params%nbands
     !
     allocate( energies( nbands, nkpts, nspin ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     !
     ! If we need some clever OMP NUMA then first touch goes here
     energies( :, :, : ) = 0.0_DP
@@ -162,6 +164,7 @@ module screen_energy
     integer, intent( inout ) :: ierr
     
     call odf_read_energies_single( myid, root, comm, energies, ierr )
+    if( ierr .ne. 0 ) return
     ! energies come in Ryd, but are used in Ha.
     energies(:,:,:) = energies(:,:,:) * 2.0_DP
 

@@ -180,11 +180,15 @@ module screen_chi_driver
         write( filnam, '(A,A2,I4.4)' ) trim( chiPrefix ), siteInfo%elname, siteInfo%indx
     end select
 
-    open( unit=99, file=filnam, form='unformatted', status='unknown' )
-    rewind( 99 )
-    write(99) size(Chi,1), size(Chi,2)
-    write(99) Chi
-    close(99)
+    open( unit=99, file=filnam, form='unformatted', status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    write(99, IOSTAT=ierr ) size(Chi,1), size(Chi,2)
+    if( ierr .ne. 0 ) return
+    write(99, IOSTAT=ierr ) Chi
+    if( ierr .ne. 0 ) return
+    close(99, IOSTAT=ierr )
   
   end subroutine driver_write_chi
 

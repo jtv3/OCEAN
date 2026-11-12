@@ -58,7 +58,8 @@ module screen_paral
       return
     endif
 
-    call how_many_groups( n_sites, nproc, pinfo%num_groups )
+    call how_many_groups( n_sites, nproc, pinfo%num_groups, ierr )
+    if( ierr .ne. 0 ) return
     if( pinfo%num_groups .lt. 1 .or. pinfo%num_groups .gt. nproc ) then
       if( myid .eq. root ) write( 6, * ) 'Invalid number of SCREEN groups: ', pinfo%num_groups, &
                                          ' for MPI processes: ', nproc
@@ -204,26 +205,38 @@ module screen_paral
 
   end function screen_paral_procID2groupID
 
-  subroutine how_many_groups( n_sites, nproc, ngroups )
-    use OCEAN_mpi, only : myid, root, MPI_INTEGER, comm
+  subroutine how_many_groups( n_sites, nproc, ngroups, ierr )
+    use OCEAN_mpi, only : myid, root, MPI_INTEGER, MPI_SUCCESS, comm
     integer, intent( in ) :: n_sites, nproc 
     integer, intent( out ) :: ngroups
+    integer, intent( inout ) :: ierr
     !
     real( DP ) :: score, best_score
-    integer :: i, j, best_ngroup, k, maxSites, ierr
+    integer :: i, j, best_ngroup, k, maxSites, ios, close_ios, requested
     logical :: ex
 
+    ierr = 0
     if( myid .eq. root ) then
+      i = 0
       inquire(file='screen.ngroups',exist=ex)
       if( ex ) then
-        open(unit=99,file='screen.ngroups',form='formatted',status='old')
-        read(99,*) i
-        close(99)
-      else
-        i = 0
+        open(unit=99,file='screen.ngroups',form='formatted',status='old',iostat=ios)
+        if( ios .eq. 0 ) then
+          requested = 0
+          read(99,*,iostat=ios) requested
+          close(99,iostat=close_ios)
+          if( ios .eq. 0 .and. close_ios .eq. 0 ) then
+            if( requested .gt. 0 ) i = requested
+          else
+            write(6,*) 'WARNING: Could not read screen.ngroups; using automatic grouping'
+          endif
+        else
+          write(6,*) 'WARNING: Could not open screen.ngroups; using automatic grouping'
+        endif
       endif
     endif
     call MPI_BCAST( i, 1, MPI_INTEGER, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
     
     if( i .gt. 0 ) then
       ngroups = i

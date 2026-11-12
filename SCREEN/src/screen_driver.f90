@@ -76,12 +76,14 @@ program screen_driver
   !
   if( screen_system_allAug() ) then
     natoms = screen_system_natoms()
-    allocate( all_atoms( natoms ) )
+    allocate( all_atoms( natoms ), STAT=ierr )
+    if( ierr .ne. 0 ) goto 111
     call screen_sites_load_atom( natoms, all_atoms, ierr )
     if( ierr .ne. 0 ) goto 111
   else
     natoms = 0
-    allocate( all_atoms( 0 ) )
+    allocate( all_atoms( 0 ), STAT=ierr )
+    if( ierr .ne. 0 ) goto 111
   endif
 
 !  write(6,*) 'screen_centralPotential_loadInternal'
@@ -99,6 +101,7 @@ program screen_driver
     call screen_kxc_loadRealSpace( nsites, all_sites, ierr )
     if( ierr .ne. 0 ) goto 111
     call screen_kxc_dumpRealSpace( nsites, all_sites, ierr )
+    if( ierr .ne. 0 ) goto 111
 !    goto 111
   endif
 
@@ -124,6 +127,7 @@ program screen_driver
   !
   ! Done with the DFT section
   call MPI_BARRIER( comm, ierr )
+  if( ierr .ne. 0 ) goto 111
   call screen_tk_stop( "dft" )
   if( myid .eq. root ) write( 6, * ) 'Done reading and converting wavefunctions'
 !  goto 111

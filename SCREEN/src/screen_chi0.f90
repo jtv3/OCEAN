@@ -47,7 +47,8 @@ module screen_chi0
       call ocean_quadrature_loadLegendre( N, tempEnergies, tempWeight, ierr )
       if( ierr .ne. 0 ) return
 
-      call buildEnergies( N, tempEnergies, tempWeight )
+      call buildEnergies( N, tempEnergies, tempWeight, ierr )
+      if( ierr .ne. 0 ) return
 
 !      if( ierr .ne. 0 ) return
 !      do i = 1, NImagEnergies
@@ -67,7 +68,8 @@ module screen_chi0
     call MPI_BCAST( NImagEnergies, 1, MPI_INTEGER, root, comm, ierr )
     if( ierr .ne. 0 ) return
     if( myid .ne. root ) then
-      allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ) )
+      allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ), STAT=ierr )
+      if( ierr .ne. 0 ) return
     endif
     call MPI_BCAST( imagEnergies, NImagEnergies, MPI_DOUBLE_PRECISION, root, comm, ierr )
     if( ierr .ne. 0 ) return
@@ -78,11 +80,12 @@ module screen_chi0
     is_init = .true.
   end subroutine screen_chi0_init
 
-  subroutine fullBuildEnergies( N, tempE, tempW )
+  subroutine fullBuildEnergies( N, tempE, tempW, ierr )
     use ocean_constants, only : pi_dp
     use screen_energy, only : geodiff
     use screen_system, only : params
 
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: N
     real(DP), intent( in ) :: tempE(:), tempW(:)
 
@@ -91,7 +94,8 @@ module screen_chi0
 
     su = 0.0_DP
     NImagEnergies = 2*N
-    allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ) )
+    allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, N
       imagEnergies( i ) = geodiff * ( 1.0_DP + tempE( i ) ) / 2.0_DP
       su = su + tempW( i )
@@ -108,10 +112,11 @@ module screen_chi0
 
   end subroutine
 
-  subroutine halfBuildEnergies( N, tempE, tempW )
+  subroutine halfBuildEnergies( N, tempE, tempW, ierr )
     use ocean_constants, only : pi_dp
     use screen_energy, only : geodiff
     use screen_system, only : params
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: N
     real(DP), intent( in ) :: tempE(:), tempW(:)
 
@@ -120,7 +125,8 @@ module screen_chi0
 
     su = 0.0_DP
     NImagEnergies = N
-    allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ) )
+    allocate( imagEnergies( NImagEnergies ), weightImagEnergies( NImagEnergies ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, NImagEnergies
       imagEnergies( i ) = ( 1.0_DP + tempE( i ) ) / 2.0_DP
       su = su + tempW( i )
@@ -135,8 +141,9 @@ module screen_chi0
 
   end subroutine halfBuildEnergies
 
-  subroutine buildEnergies( N, tempE, tempW )
+  subroutine buildEnergies( N, tempE, tempW, ierr )
     use screen_system, only : screen_system_chi0Integrand
+    integer, intent( inout ) :: ierr
     integer, intent( in ) :: N
     real(DP), intent( in ) :: tempE(:), tempW(:)
     character(len=4) :: integrand
@@ -146,12 +153,12 @@ module screen_chi0
     
       case ('half')
         write(6,*) '  Using half integrand approximation'
-        call halfBuildEnergies( N, tempE, tempW )
+        call halfBuildEnergies( N, tempE, tempW, ierr )
       case ('full')
-        call fullBuildEnergies( N, tempE, tempW )
+        call fullBuildEnergies( N, tempE, tempW, ierr )
       case default
         write(6,*) '  Using half integrand approximation by default'
-        call halfBuildEnergies( N, tempE, tempW )
+        call halfBuildEnergies( N, tempE, tempW, ierr )
     end select
   end subroutine
 
@@ -381,7 +388,8 @@ module screen_chi0
     real(DP), allocatable :: tchi(:,:)
 
     i = size( chi )
-    allocate( tchi( size(chi,2), size(chi,1) ) )
+    allocate( tchi( size(chi,2), size(chi,1) ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     tchi = transpose( chi )
 
 #ifdef MPI
@@ -506,9 +514,11 @@ module screen_chi0
       if( MyWvfn%isSplit ) then
         call MPI_ISEND( MyWvfn%real_wvfn, i, MPI_DOUBLE_PRECISION, j, TagWvfn, pinfo%comm, &
                         spareWvfnSends(j), ierr )
+        if( ierr .ne. 0 ) return
         if( .not. MyWvfn%isGamma ) then
           call MPI_ISEND( MyWvfn%imag_wvfn, i, MPI_DOUBLE_PRECISION, j, TagWvfnImag, pinfo%comm, &
                           spareWvfnSends(j+pinfo%nprocs), ierr )
+          if( ierr .ne. 0 ) return
         endif
       else
         call MPI_ISEND( MyWvfn%wvfn, i, MPI_DOUBLE_COMPLEX, j, TagWvfn, pinfo%comm, &
@@ -519,8 +529,10 @@ module screen_chi0
 
 
       call MPI_WAIT( spareWvfnRecvs(id), MPI_STATUS_IGNORE, ierr )
+      if( ierr .ne. 0 ) return
       if( MyWvfn%isSplit .and. .not. MyWvfn%isGamma ) then
         call MPI_WAIT( spareWvfnRecvs(id+pinfo%nprocs), MPI_STATUS_IGNORE, ierr )
+        if( ierr .ne. 0 ) return
       endif
       call MPI_BARRIER( pinfo%comm, ierr )
       if( ierr .ne. 0 ) return
@@ -553,8 +565,10 @@ module screen_chi0
       curPts = curPts + spareWavefunctions(id)%mypts
 
       call MPI_WAIT( spareWvfnSends(j), MPI_STATUS_IGNORE, ierr )
+      if( ierr .ne. 0 ) return
       if( MyWvfn%isSplit .and. .not. MyWvfn%isGamma ) then
         call MPI_WAIT( spareWvfnSends(j+pinfo%nprocs), MPI_STATUS_IGNORE, ierr )
+        if( ierr .ne. 0 ) return
       endif
       call screen_wvfn_kill( spareWavefunctions( id ) )
     enddo
@@ -603,9 +617,11 @@ module screen_chi0
       if( MyWvfn%isSplit ) then
         call MPI_ISEND( MyWvfn%real_wvfn, i, MPI_DOUBLE_PRECISION, j, TagWvfn, pinfo%comm, &
                         spareWvfnSends(j), ierr )
+        if( ierr .ne. 0 ) return
         if( .not. MyWvfn%isGamma ) then
           call MPI_ISEND( MyWvfn%imag_wvfn, i, MPI_DOUBLE_PRECISION, j, TagWvfnImag, pinfo%comm, &
                           spareWvfnSends(j+pinfo%nprocs), ierr )
+          if( ierr .ne. 0 ) return
         endif
       else
         call MPI_ISEND( MyWvfn%wvfn, i, MPI_DOUBLE_COMPLEX, j, TagWvfn, pinfo%comm, &
@@ -614,8 +630,10 @@ module screen_chi0
       endif
 !\JTV
       call MPI_WAIT( spareWvfnRecvs(id), MPI_STATUS_IGNORE, ierr )
+      if( ierr .ne. 0 ) return
       if( MyWvfn%isSplit .and. .not. MyWvfn%isGamma ) then
         call MPI_WAIT( spareWvfnRecvs(id+pinfo%nprocs), MPI_STATUS_IGNORE, ierr )
+        if( ierr .ne. 0 ) return
       endif
       call MPI_BARRIER( pinfo%comm, ierr )
       if( ierr .ne. 0 ) return
@@ -647,8 +665,10 @@ module screen_chi0
 
       curPts = curPts + spareWavefunctions(id)%mypts
       call MPI_WAIT( spareWvfnSends(j), MPI_STATUS_IGNORE, ierr )
+      if( ierr .ne. 0 ) return
       if( MyWvfn%isSplit .and. .not. MyWvfn%isGamma ) then
         call MPI_WAIT( spareWvfnSends(j+pinfo%nprocs), MPI_STATUS_IGNORE, ierr )
+        if( ierr .ne. 0 ) return
       endif
       call screen_wvfn_kill( spareWavefunctions( id ) )
     enddo
@@ -800,6 +820,7 @@ module screen_chi0
     real(DP), allocatable :: temp(:,:,:)
     real(DP), allocatable :: ReGreen(:,:,:), ImGreen(:,:,:), ReEnergyDenom(:,:,:), ImEnergyDenom(:,:,:)
     real(DP) :: pref, denr, deni, spinfac, pref2
+    integer :: allocErr, threadErr
     integer :: Lpts, Rpts, nbands, nKptsAndSpin, ispin, ikpt, iband, it, i, j, iks, ib, ibstop, ii, jj, energyDim
     integer :: ichunk, jchunk, istart, istop, jstart, jstop, NRchunks, NLchunks, nthreads, nthreads2, iwidth
     integer :: isleep
@@ -853,7 +874,7 @@ module screen_chi0
 
     allocate( & !ReGreen( jcSize, icSize, NImagEnergies ), ImGreen( jcSize, icSize, NImagEnergies ), &
               ReEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ), &
-              ImEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ) )
+              ImEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ), STAT=ierr )
 !    allocate( temp( jcSize, icSize, 8 ), STAT=ierr )
     if( ierr .ne. 0 ) return
 
@@ -893,15 +914,24 @@ module screen_chi0
     call screen_tk_stop( "calcSingleChiBuffer Init" )
 
 
+    allocErr = 0
 !$OMP  PARALLEL DEFAULT( NONE ) NUM_THREADS( nthreads ) &
-!$OMP& SHARED ( params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies, nthreads2, bandBuf ) &
+!$OMP& SHARED ( allocErr, params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies, nthreads2, bandBuf ) &
 !$OMP& SHARED ( chi, spinfac, weightImagEnergies, LWvfn, RWvfn, imag_LWvfn, imag_RWvfn, ReEnergyDenom, ImEnergyDenom ) &
 !$OMP& PRIVATE( ispin, ichunk, istart, istop, jchunk, jstart, jstop, iks, ib, ibstop, iband, i, j, it, pref2, ii, jj ) &
-!$OMP& PRIVATE( ReGreen, ImGreen, temp, iwidth, isleep, energyDim )
+!$OMP& PRIVATE( threadErr, ReGreen, ImGreen, temp, iwidth, isleep, energyDim )
 
 
     allocate( ReGreen( jcSize, icSize, NImagEnergies ), ImGreen( jcSize, icSize, NImagEnergies ),  &
-              temp( jcSize, icSize, bandBuf ) )
+              temp( jcSize, icSize, bandBuf ), STAT=threadErr )
+    if( threadErr .ne. 0 ) then
+!$OMP CRITICAL
+      allocErr = max( allocErr, abs( threadErr ) )
+!$OMP END CRITICAL
+    endif
+!$OMP BARRIER
+    ! Every thread must either enter or skip the worksharing loops.
+    if( allocErr .eq. 0 ) then
 
 ! Want to divide by ichunk & jchunk to avoid any conflicts on the true chi
     do ispin = 1, params%nspin
@@ -1041,8 +1071,13 @@ module screen_chi0
 !$OMP END DO
     enddo
 
-    deallocate( temp, ReGreen, ImGreen )
+    endif
+    if( allocated( temp ) ) deallocate( temp )
+    if( allocated( ReGreen ) ) deallocate( ReGreen )
+    if( allocated( ImGreen ) ) deallocate( ImGreen )
 !$OMP END PARALLEL
+    ierr = allocErr
+    if( ierr .ne. 0 ) return
 
 !    deallocate( temp )
 !    deallocate( ReGreen, ImGreen, ReEnergyDenom, ImEnergyDenom )
@@ -1068,6 +1103,7 @@ module screen_chi0
     real(DP), allocatable :: ReGreen(:,:,:), ImGreen(:,:,:), ReEnergyDenom(:,:,:), ImEnergyDenom(:,:,:)
     real(DP), allocatable, dimension(:,:) :: real_LWvfn, imag_LWvfn, real_RWvfn, imag_RWvfn
     real(DP) :: pref, denr, deni, spinfac, pref2
+    integer :: allocErr, threadErr
     integer :: Lpts, Rpts, nbands, nKptsAndSpin, ispin, ikpt, iband, it, i, j, iks, ib, ibstop, ii, jj
     integer :: ichunk, jchunk, istart, istop, jstart, jstop, NRchunks, NLchunks, nthreads, iwidth
     integer, parameter :: icSize = 16
@@ -1103,7 +1139,7 @@ module screen_chi0
 
     allocate( & !ReGreen( jcSize, icSize, NImagEnergies ), ImGreen( jcSize, icSize, NImagEnergies ), &
               ReEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ), &
-              ImEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ) )
+              ImEnergyDenom( ibstop, NImagEnergies, nKptsAndSpin ), STAT=ierr )
 !    allocate( temp( jcSize, icSize, 8 ), STAT=ierr )
     if( ierr .ne. 0 ) return
 
@@ -1145,16 +1181,25 @@ module screen_chi0
 !$  nthreads = OMP_GET_MAX_THREADS()
 !    write(1000+myid,*) 'OMP: ', nthreads
 
+    allocErr = 0
 !$OMP  PARALLEL DEFAULT( NONE )  &
-!$OMP& SHARED ( params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies ) &
+!$OMP& SHARED ( allocErr, params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies ) &
 !$OMP& SHARED ( chi, spinfac, weightImagEnergies, LWvfn, RWvfn, ReEnergyDenom, ImEnergyDenom ) &
 !$OMP& PRIVATE( ispin, ichunk, istart, istop, jchunk, jstart, jstop, iks, ib, ibstop, iband, i, j, it, pref2, ii, jj ) &
 !$OMP& PRIVATE( real_LWvfn, imag_LWvfn, real_RWvfn, imag_RWvfn, iwidth ) &
-!$OMP& PRIVATE( ReGreen, ImGreen, temp )
+!$OMP& PRIVATE( threadErr, ReGreen, ImGreen, temp )
 
 
     allocate( ReGreen( jcSize, icSize, NImagEnergies ), ImGreen( jcSize, icSize, NImagEnergies ),  &
-              temp( jcSize, icSize, bandBuf ) )
+              temp( jcSize, icSize, bandBuf ), STAT=threadErr )
+    if( threadErr .ne. 0 ) then
+!$OMP CRITICAL
+      allocErr = max( allocErr, abs( threadErr ) )
+!$OMP END CRITICAL
+    endif
+!$OMP BARRIER
+    ! Every thread must either enter or skip the worksharing loops.
+    if( allocErr .eq. 0 ) then
 
 ! Want to divide by ichunk & jchunk to avoid any conflicts on the true chi
     do ispin = 1, params%nspin
@@ -1256,8 +1301,13 @@ module screen_chi0
 !$OMP END DO
     enddo
 
-    deallocate( temp, ReGreen, ImGreen )
+    endif
+    if( allocated( temp ) ) deallocate( temp )
+    if( allocated( ReGreen ) ) deallocate( ReGreen )
+    if( allocated( ImGreen ) ) deallocate( ImGreen )
 !$OMP END PARALLEL
+    ierr = allocErr
+    if( ierr .ne. 0 ) return
 
 !    deallocate( temp )
 !    deallocate( ReGreen, ImGreen, ReEnergyDenom, ImEnergyDenom )
@@ -1283,6 +1333,7 @@ module screen_chi0
     complex(DP), allocatable :: temp(:,:,:)
     complex(DP), allocatable :: CmplGreen(:,:,:), CmplTransGreen(:,:,:), EnergyDenom(:,:,:), NegEnergyDenom(:,:,:)
     real(DP) :: pref, denr, deni, spinfac, pref2
+    integer :: allocErr, threadErr
     integer :: Lpts, Rpts, nbands, nKptsAndSpin, ispin, ikpt, iband, it, i, j, iks, ib, ibstop, ii, jj
     integer :: ichunk, jchunk, istart, istop, jstart, jstop, NRchunks, NLchunks, nthreads, iwidth, ibwidth
     integer :: innerthreads, outerthreads
@@ -1377,15 +1428,24 @@ module screen_chi0
 !$  if( present(isDiagonal) ) flush(1000+myid)
     
 
+    allocErr = 0
 !$OMP  PARALLEL DEFAULT( NONE ) NUM_THREADS( outerthreads )  &
-!$OMP& SHARED ( params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies, innerthreads ) &
+!$OMP& SHARED ( allocErr, params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies, innerthreads ) &
 !$OMP& SHARED ( chi, spinfac, weightImagEnergies, LWvfn, RWvfn, EnergyDenom, NegEnergyDenom, ibwidth ) &
 !$OMP& PRIVATE( ispin, ichunk, istart, istop, jchunk, jstart, jstop, iks, ib, ibstop, iband, i, j, it, pref2, ii, jj ) &
-!$OMP& PRIVATE( CmplGreen, CmplTransGreen, temp )
+!$OMP& PRIVATE( threadErr, CmplGreen, CmplTransGreen, temp )
 
 
     allocate( CmplGreen( jcSize, icSize, NImagEnergies ), CmplTransGreen( jcSize, icSize, NImagEnergies ),  &
-              temp( jcSize, icSize, bandBuf ) )
+              temp( jcSize, icSize, bandBuf ), STAT=threadErr )
+    if( threadErr .ne. 0 ) then
+!$OMP CRITICAL
+      allocErr = max( allocErr, abs( threadErr ) )
+!$OMP END CRITICAL
+    endif
+!$OMP BARRIER
+    ! Every thread must either enter or skip the worksharing loops.
+    if( allocErr .eq. 0 ) then
 
 ! Want to divide by ichunk & jchunk to avoid any conflicts on the true chi
     do ispin = 1, params%nspin
@@ -1476,8 +1536,13 @@ module screen_chi0
 !$OMP END DO
     enddo
 
-    deallocate( temp, CmplGreen, CmplTransGreen )
+    endif
+    if( allocated( temp ) ) deallocate( temp )
+    if( allocated( CmplGreen ) ) deallocate( CmplGreen )
+    if( allocated( CmplTransGreen ) ) deallocate( CmplTransGreen )
 !$OMP END PARALLEL
+    ierr = allocErr
+    if( ierr .ne. 0 ) return
 
     deallocate( EnergyDenom, NegEnergyDenom )
 

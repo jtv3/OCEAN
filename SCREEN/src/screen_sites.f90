@@ -120,7 +120,8 @@ module screen_sites
 
     call count_shells( nshells, ierr )
     if( ierr .ne. 0 ) return
-    allocate( shells( nshells ) )
+    allocate( shells( nshells ), stat=ierr )
+    if( ierr .ne. 0 ) return
     call read_shells( nshells, shells, ierr )
     if( ierr .ne. 0 ) return
 
@@ -140,7 +141,8 @@ module screen_sites
           all_sites( i )%info%elname = '__'
           all_sites( i )%info%z = 0
       
-          allocate( all_sites( i )%shells( nshells ) )
+          allocate( all_sites( i )%shells( nshells ), stat=ierr )
+          if( ierr .ne. 0 ) return
           all_sites( i )%shells( : ) = shells( 1 : nshells )
 
           ! convert tau to xcoord
@@ -171,21 +173,28 @@ module screen_sites
 
 !> @brief loads xmesh, which might be better moved to system at some point
   subroutine get_xmesh( xmesh, ierr )
-    use ocean_mpi, only : myid, root, comm, MPI_INTEGER
+    use ocean_mpi, only : myid, root, comm, MPI_INTEGER, MPI_SUCCESS
     !
     integer, intent( out ) :: xmesh( 3 )
     integer, intent( inout ) :: ierr
     !
 
+    ierr = 0
+    xmesh(:) = 0
     if( myid .eq. root ) then
-      open( unit=99, file='xmesh.ipt', form='formatted', status='old' )
-      read( 99, * ) xmesh( : )
-      close( 99 )
+      open( unit=99, file='xmesh.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, *, iostat=ierr ) xmesh( : )
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
     endif
 
 #ifdef MPI
     call MPI_BCAST( xmesh, 3, MPI_INTEGER, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
 #endif
+    if( any( xmesh .le. 0 ) ) ierr = -1
 
   end subroutine get_xmesh
 
@@ -207,14 +216,16 @@ module screen_sites
     integer, allocatable :: tmp_indices( : )
     character( len=2 ), allocatable :: tmp_elnames( : )
 
-    allocate( tmp_indices( n_sites ), tmp_elnames( n_sites ) )
+    allocate( tmp_indices( n_sites ), tmp_elnames( n_sites ), stat=ierr )
+    if( ierr .ne. 0 ) return
     call load_sitelist( n_sites, tmp_indices, tmp_elnames, ierr )
     if( ierr .ne. 0 ) return
 
     ! currently every site gets the same shell list
     call count_shells( nshells, ierr )
     if( ierr .ne. 0 ) return
-    allocate( shells( nshells ) )
+    allocate( shells( nshells ), stat=ierr )
+    if( ierr .ne. 0 ) return
     call read_shells( nshells, shells, ierr )
     if( ierr .ne. 0 ) return
 
@@ -230,7 +241,8 @@ module screen_sites
         return
       endif
 
-      allocate( all_sites( i )%shells( nshells ) )
+      allocate( all_sites( i )%shells( nshells ), stat=ierr )
+      if( ierr .ne. 0 ) return
       all_sites( i )%shells( : ) = shells( 1 : nshells )
     enddo
     deallocate( tmp_indices, tmp_elnames, shells )
@@ -289,6 +301,7 @@ module screen_sites
       else
         call screen_grid_init( all_sites( i )%grid, xcoord, ierr, Z=all_sites( i )%info%z )
       endif
+      if( ierr .ne. 0 ) return
 
     enddo
 
@@ -299,7 +312,7 @@ module screen_sites
 !> @brief Returns a count of unique sites for calculating the screening. Either the number of
 !> atomic sites that are being screened, or the count of xmesh for valence code
   subroutine count_sitelist( nsites, ierr )
-    use OCEAN_mpi, only : myid, root, comm, MPI_INTEGER
+    use OCEAN_mpi, only : myid, root, comm, MPI_INTEGER, MPI_SUCCESS
     use screen_system, only : screen_system_mode
     !
     integer, intent( out ) :: nsites
@@ -307,39 +320,38 @@ module screen_sites
     !
     integer :: ierr_, xmesh(3)
     !
+    ierr = 0
+    nsites = 0
     if( myid .eq. root ) then
-
       select case( screen_system_mode() )
 
         case( 'core' ) 
-
           open( unit=99, file='sitelist', form='formatted', status='old', iostat=ierr, action='read' )
-          if( ierr .ne. 0 ) then
-            write(6,*) 'Failed to open sitelist'
-            goto 10
-          endif
-
-          rewind(99)
+          if( ierr .ne. 0 ) goto 10
+          rewind(99,iostat=ierr)
+          if( ierr .ne. 0 ) goto 10
           read( 99, *, iostat=ierr ) nsites
-          if( ierr .ne. 0 ) write(6,*) 'Failed to read sitelist'
-          close( 99 )
+          if( ierr .ne. 0 ) goto 10
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) write(6,*) 'Failed to read sitelist', ierr
 
         case( 'grid' )
 
           open( unit=99, file='xmesh.ipt', form='formatted', status='old', iostat=ierr, action='read' )
-          if( ierr .ne. 0 ) then
-            write(6,*) 'Failed to open xmesh.ipt'
-            goto 10
-          endif
-
-          rewind(99)
+          if( ierr .ne. 0 ) goto 10
+          rewind(99,iostat=ierr)
+          if( ierr .ne. 0 ) goto 10
           read( 99, *, iostat=ierr ) xmesh(:)
-          if( ierr .ne. 0 ) then 
-            write(6,*) 'Failed to read xmesh'
-          else
-            nsites = product( xmesh )
+          if( ierr .ne. 0 ) goto 10
+          close( 99, iostat=ierr )
+          if( ierr .eq. 0 ) then
+            if( any( xmesh .le. 0 ) ) then
+              ierr = -1
+            else
+              nsites = product( xmesh )
+            endif
           endif
-          close( 99 )
+          if( ierr .ne. 0 ) write(6,*) 'Failed to read xmesh', ierr
 
         case default
           ierr = 1
@@ -350,21 +362,21 @@ module screen_sites
 
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-    if( ierr .ne. 0 ) return
-    if( ierr_ .ne. 0 ) then
+    if( ierr_ .ne. MPI_SUCCESS ) then
       if( myid .eq. root ) write(6,*) 'Failed to sync ierr in screen_sites_count_sitelist'
       ierr = ierr_
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( nsites, 1, MPI_INTEGER, root, comm, ierr )
-    if( ierr .ne. 0 ) return
+    if( ierr .ne. MPI_SUCCESS ) return
 #endif
 
   end subroutine count_sitelist
 
   subroutine load_sitelist( nsites, tmp_indices, tmp_elnames, ierr )
-    use OCEAN_mpi, only : myid, comm, root, MPI_INTEGER, MPI_CHARACTER
+    use OCEAN_mpi, only : myid, comm, root, MPI_INTEGER, MPI_CHARACTER, MPI_SUCCESS
     !
     integer, intent( in ) :: nsites
     integer, intent( inout ) :: ierr
@@ -373,17 +385,15 @@ module screen_sites
 
     integer :: ierr_, nsites_, i, idum
     !
+    ierr = 0
     if( myid .eq. root ) then
       open( unit=99, file='sitelist', form='formatted', status='old', iostat=ierr, action='read' )
-      if( ierr .ne. 0 ) then
-        write(6,*) 'Failed to open sitelist'
-        goto 10
-      endif
-
-      rewind(99)
+      if( ierr .ne. 0 ) goto 10
+      rewind(99,iostat=ierr)
+      if( ierr .ne. 0 ) goto 10
       read( 99, *, iostat=ierr ) nsites_
       if( ierr .ne. 0 ) then
-        write(6,*) 'Failed to read sitelist'
+        write(6,*) 'Failed to read sitelist header', ierr
         goto 10
       endif
       
@@ -400,48 +410,53 @@ module screen_sites
           goto 10
         endif
       enddo
-
-      close( 99 )
-
+      close( 99, iostat=ierr )
     endif
 
 10  continue
 
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-    if( ierr .ne. 0 ) return
-    if( ierr_ .ne. 0 ) then
+    if( ierr_ .ne. MPI_SUCCESS ) then
       if( myid .eq. root ) write(6,*) 'Failed to sync ierr in screen_sites_count_sitelist'
       ierr = ierr_
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( tmp_elnames, 2*nsites, MPI_CHARACTER, root, comm, ierr )
-    if( ierr .ne. 0 ) return
+    if( ierr .ne. MPI_SUCCESS ) return
     call MPI_BCAST( tmp_indices, nsites, MPI_INTEGER, root, comm, ierr )
-    if( ierr .ne. 0 ) return
 #endif
 
   end subroutine load_sitelist
 
   subroutine count_shells( nshells, ierr )
-    use ocean_mpi, only : myid, root, comm, MPI_INTEGER
+    use ocean_mpi, only : myid, root, comm, MPI_INTEGER, MPI_SUCCESS
     integer, intent( out ) :: nshells
     integer, intent( inout ) :: ierr
 
+    ierr = 0
+    nshells = -1
     if( myid .eq. root ) then
-      open( unit=99, file='shells', form='formatted', status='old' )
-      rewind( 99 )
-      read( 99, * ) nshells
-      close( 99 )
+      open( unit=99, file='shells', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      rewind( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, *, iostat=ierr ) nshells
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
     endif
 #ifdef MPI
     call MPI_BCAST( nshells, 1, MPI_INTEGER, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
 #endif
+    if( nshells .lt. 0 ) ierr = -1
   end subroutine count_shells
 
   subroutine read_shells( nshells, shells, ierr )
-    use ocean_mpi, only : myid, root, comm, MPI_INTEGER, MPI_DOUBLE_PRECISION
+    use ocean_mpi, only : myid, root, comm, MPI_INTEGER, MPI_DOUBLE_PRECISION, MPI_SUCCESS
     integer, intent( inout ) :: nshells
     real(DP), intent( out ) :: shells( nshells )
     integer, intent( inout ) :: ierr
@@ -449,32 +464,37 @@ module screen_sites
     integer :: nshells_, ierr_
 
     ierr_ = 0
+    ierr = 0
     nshells_ = nshells
     if( myid .eq. root ) then
-      open( unit=99, file='shells', form='formatted', status='old' )
-      rewind( 99 )
-      read( 99, * ) nshells
+      open( unit=99, file='shells', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      rewind( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, *, iostat=ierr ) nshells
+      if( ierr .ne. 0 ) return
 
-      if( nshells .gt. nshells_ ) then
+      if( nshells .lt. 0 .or. nshells .gt. nshells_ ) then
         ierr = 1
         goto 11
       endif
-      read(99,*) shells(:)
-      close( 99 )
+      if( nshells .gt. 0 ) read(99,*,iostat=ierr) shells(1:nshells)
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
     endif
 
 11  continue
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-#endif
-    if( ierr .ne. 0 ) return
-    if( ierr_ .ne. 0 ) then
+    if( ierr_ .ne. MPI_SUCCESS ) then
       ierr = ierr_
       return
     endif
+#endif
+    if( ierr .ne. 0 ) return
 #ifdef MPI
     call MPI_BCAST( nshells, 1, MPI_INTEGER, root, comm, ierr )
-    if( ierr .ne. 0 ) return
+    if( ierr .ne. MPI_SUCCESS ) return
     call MPI_BCAST( shells, nshells, MPI_DOUBLE_PRECISION, root, comm, ierr )
 #endif
   end subroutine read_shells

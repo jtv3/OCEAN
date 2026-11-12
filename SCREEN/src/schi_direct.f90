@@ -51,18 +51,23 @@ module schi_direct
 #ifdef DEBUG
     do ilm = 1, nlm
       write(filnam,'(A6,I1,I1)') 'zmunu.', ilm, ilm
-      open( unit=99, file=filnam, form='formatted', status='unknown' )
+      open( unit=99, file=filnam, form='formatted', status='unknown', IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, nr
         do j = 1, nr
-           write ( 99, '(3(1x,1e15.8))' ) grid%rad( i ), grid%rad( j ), FullChi( i, ilm, j, ilm )
+           write ( 99, '(3(1x,1e15.8))', IOSTAT=ierr ) grid%rad( i ), grid%rad( j ), FullChi( i, ilm, j, ilm )
+           if( ierr .ne. 0 ) return
         enddo
-        write ( 99, * )
+        write ( 99, *, IOSTAT=ierr )
+        if( ierr .ne. 0 ) return
       enddo
-      close( 99 )
+      close( 99, IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
     enddo
 #endif
 
-    allocate( vipt( nr ) )
+    allocate( vipt( nr ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     call Newmkvipt( nr, grid%rad, pot%rad, pot%pot, vipt )
 
 
@@ -91,25 +96,34 @@ module schi_direct
 
 #ifdef DEBUG
 
-    allocate( transpNind( nLM, nr ) )
+    allocate( transpNind( nLM, nr ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     transpNind = transpose( Nind )
-    open( unit=99, file='ninduced.test', form='formatted', status='unknown' )
-    rewind 99
+    open( unit=99, file='ninduced.test', form='formatted', status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 !    write(fmtstmt,'(A1,I,A12)') '(', nLM+1, '(1x,1e15.8))'
     write(fmtstmt, '("(", I0, "(1x,1e15.8))")' ) nLM+1
     write(6,*) fmtstmt
     do i = 1, nr
-        write ( 99, fmtstmt ) grid%rad( i ), transpNind(:,i ) !NInd(i,:)
+        write ( 99, fmtstmt, IOSTAT=ierr ) grid%rad( i ), transpNind(:,i ) !NInd(i,:)
+        if( ierr .ne. 0 ) return
     end do
-    close( unit=99 )
+    close( unit=99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
 
     transpNind = transpose( Nind0 )
-    open( unit=99, file='nin0.test', form='formatted', status='unknown' )
-    rewind 99
+    open( unit=99, file='nin0.test', form='formatted', status='unknown', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, nr
-        write ( 99, fmtstmt ) grid%rad( i ), transpNind(:,i ) !NInd(i,:)
+        write ( 99, fmtstmt, IOSTAT=ierr ) grid%rad( i ), transpNind(:,i ) !NInd(i,:)
+        if( ierr .ne. 0 ) return
     end do
-    close( unit=99 )
+    close( unit=99, IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
     deallocate( transpNind )
 #endif
 
@@ -443,13 +457,20 @@ module schi_direct
     if( appx .eq. 'LD3' ) then
 #if 1
 
-      open( unit=99, file='avden', form='formatted', status='unknown' )
+      open( unit=99, file='avden', form='formatted', status='old', IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
       numr = 400
-      allocate( atrad( 0 : numr ), atden( 0 : numr ) )
+      allocate( atrad( 0 : numr ), atden( 0 : numr ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       cur = 1
 120   continue
       do i = cur, numr
-        read( 99, * , IOSTAT=j, ERR=100 ) dumc, dumi, atrad( i ), atden( i )
+        read( 99, * , IOSTAT=ierr ) dumc, dumi, atrad( i ), atden( i )
+        if( ierr .lt. 0 ) then
+          ierr = 0
+          goto 100
+        endif
+        if( ierr .ne. 0 ) return
       enddo
       goto 100
       cur = numr+1
@@ -469,7 +490,12 @@ module schi_direct
 100   continue
       numr = i - 1
       write(6,*) 'avden length: ', numr
-      close(99)
+      if( numr .lt. 3 ) then
+        ierr = 1
+        return
+      endif
+      close(99, IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
 
       frac1 = atrad( 1 ) ** 2
       frac2 = atrad( 2 ) ** 2
@@ -479,13 +505,19 @@ module schi_direct
       atrad( 0 ) = -atrad( 2 )
 
       
-      allocate( kxc( nr, nLM ) )
+      allocate( kxc( nr, nLM ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 
       do i = 1, nr
         j = 1
-        do while ( grid%rad( i ) .ge. atrad( j + 1 ) )
-           j = j + 1
-        end do
+        do
+          if( j + 2 .gt. numr ) then
+            ierr = 1
+            return
+          endif
+          if( grid%rad( i ) .lt. atrad( j + 1 ) ) exit
+          j = j + 1
+        enddo
         r = grid%rad( i )
         r1 = atrad( j - 1 ); r2 = atrad( j ); r3 = atrad( j + 1 ); r4 = atrad( j + 2 )
         d1 = atden( j - 1 ); d2 = atden( j ); d3 = atden( j + 1 ); d4 = atden( j + 2 )

@@ -25,34 +25,43 @@ module ocean_quadrature
 
     integer :: i, j
 
+    ierr = 0
     if( mod( order, 2 ) .ne. 0 ) then
       ierr = 1
       return
     endif
+    if( order .lt. 2 .or. size( abscissae ) .lt. order .or. size( weights ) .lt. order ) then
+      ierr = 2
+      return
+    endif
 
-    open( unit=99, file='EvenQuadHalf.txt', form='formatted', status='old', iostat=ierr, ERR=10 )
+    open( unit=99, file='EvenQuadHalf.txt', form='formatted', status='old', iostat=ierr )
+    if( ierr .ne. 0 ) return
     do
-      read(99,*) i
+      read(99,*,iostat=ierr) i
+      if( ierr .ne. 0 ) return
+      if( i .lt. 2 .or. mod( i, 2 ) .ne. 0 ) then
+        ierr = 1
+        return
+      endif
       if( i .eq. order ) then
         do j = 1, i/2
-          read(99,*) abscissae(j), weights(j)
+          read(99,*,iostat=ierr) abscissae(j), weights(j)
+          if( ierr .ne. 0 ) return
           abscissae(i-j+1) = -abscissae(j)
           weights(i-j+1) = weights(j)
         enddo
-        
-        goto 11
+        exit
       else
         do j = 1, i/2
-          read(99,*)
+          read(99,*,iostat=ierr)
+          if( ierr .ne. 0 ) return
         enddo
       endif
     enddo
-    
-11 continue
-    close( 99 )
 
-10  continue
-    
+    close( 99, iostat=ierr )
+
   end subroutine ocean_quadrature_loadLegendre
 
 end module

@@ -94,28 +94,42 @@ module screen_grid
 !    write(6,*) filnam
 
 #ifdef DEBUG
-    open( unit=99, file=filnam, form='formatted', status='unknown', iostat=ierr, err=100 )
-    rewind( 99 )
-    write(99,*) g%npt, g%nr, g%rmax, g%center
-    write(99,*) g%posn
-    write(99,*) g%wpt
-    write(99,*) g%drel
-    write(99,*) g%rad
-    write(99,*) g%drad
-    close(99)
+    open( unit=99, file=filnam, form='formatted', status='unknown', iostat=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, iostat=ierr )
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%npt, g%nr, g%rmax, g%center
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%posn
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%wpt
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%drel
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%rad
+    if( ierr .ne. 0 ) return
+    write(99,*,iostat=ierr) g%drad
+    if( ierr .ne. 0 ) return
 #else
-    open( unit=99, file=filnam, form='unformatted', status='unknown', iostat=ierr, err=100 )
-    rewind( 99 )
-    write(99) g%npt, g%nr, g%rmax, g%center
-    write(99) g%posn
-    write(99) g%wpt
-    write(99) g%drel
-    write(99) g%rad
-    write(99) g%drad
-    close(99)
+    open( unit=99, file=filnam, form='unformatted', status='unknown', iostat=ierr )
+    if( ierr .ne. 0 ) return
+    rewind( 99, iostat=ierr )
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%npt, g%nr, g%rmax, g%center
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%posn
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%wpt
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%drel
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%rad
+    if( ierr .ne. 0 ) return
+    write(99,iostat=ierr) g%drad
+    if( ierr .ne. 0 ) return
 #endif
 
-100 continue
+    close( 99, iostat=ierr )
 
   end subroutine screen_grid_dumpFullGrid
 
@@ -127,15 +141,21 @@ module screen_grid
     integer :: ierr_
     !
     if( myid .eq. root ) then
-      open( unit=99, file='rbfile.bin', form='unformatted', status='unknown', iostat=ierr, err=10 )
-      rewind 99
-      write(99) g%npt, g%rmax
-      write(99) g%posn
-      write(99) g%wpt
-      write(99) g%drel
-      close(99)
+      open( unit=99, file='rbfile.bin', form='unformatted', status='unknown', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      rewind( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      write(99,iostat=ierr) g%npt, g%rmax
+      if( ierr .ne. 0 ) return
+      write(99,iostat=ierr) g%posn
+      if( ierr .ne. 0 ) return
+      write(99,iostat=ierr) g%wpt
+      if( ierr .ne. 0 ) return
+      write(99,iostat=ierr) g%drel
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
     endif
-10  continue
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
     if( ierr .ne. 0 ) return
@@ -154,6 +174,7 @@ module screen_grid
     integer :: ii, ierr_
     real(DP) :: rmin
 
+    ierr = 0
     if( myid .eq. root ) then
       open( unit=99, file='mkrb_control', form='formatted', status='old', IOSTAT=ierr )
 !      if( ierr .eq. IOS_FILENOTFOU ) then
@@ -165,7 +186,8 @@ module screen_grid
         goto 111
       endif
 
-      read( 99, *, IOSTAT=ierr, ERR=10 ) g%rmax, g%ninter
+      read( 99, *, IOSTAT=ierr ) g%rmax, g%ninter
+      if( ierr .ne. 0 ) goto 10
 
       if( g%rmax .le. 0 ) then
         write( 6, * ) 'Rmax must be positive', g%rmax
@@ -187,8 +209,9 @@ module screen_grid
 
       rmin = 0.0_DP
       do ii = 1, g%ninter
-        read( 99, *, IOSTAT=ierr, ERR=10 ) g%rgrid( ii )%rmode, g%rgrid( ii )%rmax, g%rgrid( ii )%dr, &
+        read( 99, *, IOSTAT=ierr ) g%rgrid( ii )%rmode, g%rgrid( ii )%rmax, g%rgrid( ii )%dr, &
                                            g%agrid( ii )%lmax, g%agrid( ii )%angle_type
+        if( ierr .ne. 0 ) goto 10
         g%rgrid( ii )%rmin = rmin
         rmin = g%rgrid( ii )%rmax
       enddo
@@ -225,7 +248,8 @@ module screen_grid
       if( ierr .ne. MPI_SUCCESS ) return
 
       if( myid .ne. 0 ) then 
-        allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ) )
+        allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ), STAT=ierr )
+        if( ierr .ne. 0 ) return
       endif
 
       do ii = 1, g%ninter
@@ -269,22 +293,25 @@ module screen_grid
     character(len=20) :: fname
     logical :: ex
 
+    ierr = 0
+    g%rmax = 0.0_DP
     if( myid .eq. root ) then
       write( fname, '(A,I3.3)' ) 'zpawinfo/radfilez', z
       write(6,*) fname
       inquire( file=fname, exist=ex )
       if( ex ) then
-        open( unit=99, file=fname, form='formatted', status='old' )
-        read( 99, * )  g%rmax
-        close( 99 )
-      else
-        g%rmax = 0.0_DP
+        open( unit=99, file=fname, form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99, *, iostat=ierr ) g%rmax
+        if( ierr .ne. 0 ) return
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       endif
       write(6,*) fname, g%rmax
 
       g%ninter = 1
-      allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ) )
-
+      allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       g%rgrid( 1 )%rmode = 'legendre'
       g%rgrid( 1 )%rmax = g%rmax
       g%rgrid( 1 )%rmin = 0.0_DP
@@ -304,7 +331,8 @@ module screen_grid
       if( ierr .ne. MPI_SUCCESS ) return
 
       if( myid .ne. 0 ) then
-        allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ) )
+        allocate( g%rgrid( g%ninter ), g%agrid( g%ninter ), STAT=ierr )
+        if( ierr .ne. 0 ) return
       endif
 
       call MPI_BCAST( g%rgrid(1)%rmax, 1, MPI_DOUBLE_PRECISION, root, comm, ierr )
@@ -320,7 +348,7 @@ module screen_grid
       if( ierr .ne. MPI_SUCCESS ) return
 
       call MPI_BCAST( g%agrid(1)%lmax, 1, MPI_INTEGER, root, comm, ierr )
-              if( ierr .ne. MPI_SUCCESS ) return
+      if( ierr .ne. MPI_SUCCESS ) return
 
       call MPI_BCAST( g%agrid(1)%angle_type, 7, MPI_CHARACTER, root, comm, ierr )
       if( ierr .ne. MPI_SUCCESS ) return
@@ -369,6 +397,7 @@ module screen_grid
     !
     real(DP), allocatable :: wr(:)
     integer :: i, ipt, ii, jj, ir
+    integer :: alloc_ierr
     
     
     new_g%npt = 0
@@ -407,7 +436,11 @@ module screen_grid
     ir = 0
     ipt = 0
     do i = 1, new_g%ninter
-      allocate( wr( new_g%rgrid(i)%nr ) )
+      allocate( wr( new_g%rgrid(i)%nr ), stat=alloc_ierr )
+      if( alloc_ierr .ne. 0 ) then
+        ierr = alloc_ierr
+        return
+      endif
       do ii = 1, new_g%rgrid(i)%nr
         wr( ii ) = new_g%rgrid(i)%drad( ii ) * new_g%rgrid(i)%rad( ii )**2
       enddo
@@ -476,6 +509,8 @@ module screen_grid
     character( len=11 ) :: filnam
     logical :: ex
     !
+    ierr = 0
+    ag%nang = 0
     if( myid .eq. root ) then
 
       write( filnam, '(A7,A1,I0)' ) ag%angle_type, '.', ag%lmax
@@ -495,9 +530,11 @@ module screen_grid
         endif
       endif
     
-      open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr, ERR=10 )
+      open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr )
+      if( ierr .ne. 0 ) goto 10
 
-      read( 99, * ) ag%nang
+      read( 99, *, iostat=ierr ) ag%nang
+      if( ierr .ne. 0 ) goto 10
       if( ag%nang .le. 0 ) then
         ierr = -7
         goto 10
@@ -510,7 +547,8 @@ module screen_grid
 
       su = 0.0_DP
       do i = 1, ag%nang
-        read( 99, * ) ag%angles( :, i ), ag%weights( i )
+        read( 99, *, iostat=ierr ) ag%angles( :, i ), ag%weights( i )
+        if( ierr .ne. 0 ) goto 10
         su = su + ag%weights( i )
         tmp = dot_product( ag%angles( :, i ), ag%angles( :, i ) )
         tmp = 1.0_DP / dsqrt( tmp )
@@ -519,8 +557,7 @@ module screen_grid
 
       su = 4.0_DP * PI_DP / su
       ag%weights( : ) = ag%weights( : ) * su
-
-      close( 99 )
+      close( 99, iostat=ierr )
     endif        
 
     ! Catch up on errors from above
