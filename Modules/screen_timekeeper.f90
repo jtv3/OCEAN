@@ -180,10 +180,12 @@ module SCREEN_timekeeper
 #endif
 
     character(LEN=16) :: filnam
-    integer :: iter, nproc, ierr, i
+    integer :: iter, nproc, ierr, i, j, nReport, maxReport
     integer(8) :: iavg, imax, imin
     real(DP) :: avg, stddev
-    integer(8), allocatable :: allTotal(:,:)
+    integer, allocatable :: rankCount(:)
+    integer(8), allocatable :: allTotal(:,:), rankTotal(:)
+    character(LEN=32), allocatable :: allLabel(:,:), reportLabel(:)
 #ifdef MPI_F08
     TYPE(MPI_Status) :: stat
 #else
@@ -203,47 +205,87 @@ module SCREEN_timekeeper
     if( nproc .gt. 1 ) then
 
       if( myid .eq. 0 ) then
-        allocate( allTotal( ndivs, 0:nproc-1) )
-        allTotal(:,0) = total(1:ndivs)
+        allocate( rankCount(0:nproc-1) )
+        allocate( allTotal( maxdivs, 0:nproc-1 ), allLabel( maxdivs, 0:nproc-1 ) )
+        rankCount(:) = 0
+        allTotal(:,:) = 0
+        allLabel(:,:) = ''
+        rankCount(0) = ndivs
+        allTotal(1:ndivs,0) = total(1:ndivs)
+        allLabel(1:ndivs,0) = tk_label(1:ndivs)
         do iter = 1, nproc-1
-          call MPI_RECV( allTotal(:,iter), ndivs, MPI_INTEGER8, iter, 1, comm, stat, ierr )
+          call MPI_RECV( rankCount(iter), 1, MPI_INTEGER, iter, 1, comm, stat, ierr )
+          if( rankCount(iter) .gt. 0 ) then
+            call MPI_RECV( allLabel(1:rankCount(iter),iter), 32*rankCount(iter), &
+                           MPI_CHARACTER, iter, 2, comm, stat, ierr )
+            call MPI_RECV( allTotal(1:rankCount(iter),iter), rankCount(iter), &
+                           MPI_INTEGER8, iter, 3, comm, stat, ierr )
+          endif
         enddo
       else
-        call MPI_SEND( total(:), ndivs, MPI_INTEGER8, 0, 1, comm, ierr )
+        call MPI_SEND( ndivs, 1, MPI_INTEGER, 0, 1, comm, ierr )
+        if( ndivs .gt. 0 ) then
+          call MPI_SEND( tk_label(1:ndivs), 32*ndivs, MPI_CHARACTER, 0, 2, comm, ierr )
+          call MPI_SEND( total(1:ndivs), ndivs, MPI_INTEGER8, 0, 3, comm, ierr )
+        endif
       endif
 
       if( myid .eq. 0 ) then
+        maxReport = sum( rankCount(:) )
+        allocate( reportLabel( maxReport ), rankTotal( 0:nproc-1 ) )
+        nReport = 0
+        do i = 1, rankCount(0)
+          nReport = nReport + 1
+          reportLabel( nReport ) = allLabel(i,0)
+        enddo
+        do iter = 1, nproc-1
+          do i = 1, rankCount(iter)
+            do j = 1, nReport
+              if( allLabel(i,iter) .eq. reportLabel(j) ) exit
+            enddo
+            if( j .gt. nReport ) then
+              nReport = nReport + 1
+              reportLabel( nReport ) = allLabel(i,iter)
+            endif
+          enddo
+        enddo
+
         write(filnam,'(A6,I6.6,A4)' ) 'timing', myid, '.txt'
         open(unit=99,file=filnam,form='formatted',status='unknown')
         rewind(99)
 
         ! 32 + 1 + 20 + 1 + 5
         write(99,'(A1,A69,A,A22,A17,A17,A17,A17)') '#', '', 'Root', 'Avg', 'StdDev', 'Min', 'Max'
-        do iter = 1, ndivs
-          iavg = allTotal(iter,0)
-          imax = allTotal(iter,0)
-          imin = allTotal(iter,0)
-          do i  =1, nproc-1
-            iavg = iavg + allTotal(iter,i)
-            imax = max( imax, allTotal(iter,i) )
-            imin = min( imin, allTotal(iter,i) )
+        do iter = 1, nReport
+          ! Missing labels contribute zero ticks for that rank.
+          rankTotal(:) = 0
+          do i = 0, nproc-1
+            do j = 1, rankCount(i)
+              if( allLabel(j,i) .eq. reportLabel(iter) ) then
+                rankTotal(i) = allTotal(j,i)
+                exit
+              endif
+            enddo
           enddo
+          iavg = sum( rankTotal(:) )
+          imax = maxval( rankTotal(:) )
+          imin = minval( rankTotal(:) )
           avg = dble( iavg ) / dble( nproc )
-          stddev = 0
-          do i  =0, nproc-1
-            stddev = ( avg - dble( allTotal(iter,i) ) ) **2
+          stddev = 0.0_DP
+          do i = 0, nproc-1
+            stddev = stddev + ( avg - dble( rankTotal(i) ) ) ** 2
           enddo
-          stddev = sqrt( stddev/dble(nproc ))
+          stddev = sqrt( stddev/dble(nproc) )
           ! 10 digits before the decimal should get us 10 years in seconds
           write( 99, '(A,1X,I20,1X,A5,F16.6,1X,A5,1X,F16.6,1X,F16.6,1X,F16.6,1X,F16.6)' ) &
-                  tk_label( iter ), allTotal(iter,0), ' tics', &
-                  (dble( allTotal( iter,0 ) )/dble(count_rate)), 'secs', &
+                  reportLabel( iter ), rankTotal(0), ' tics', &
+                  (dble( rankTotal(0) )/dble(count_rate)), 'secs', &
                   avg/dble(count_rate), stddev/dble(count_rate), &
                   dble(imin)/dble(count_rate), dble(imax)/dble(count_rate)
         enddo
         close(99)
 
-        deallocate( allTotal )
+        deallocate( rankCount, allTotal, allLabel, reportLabel, rankTotal )
       endif
 
     else
