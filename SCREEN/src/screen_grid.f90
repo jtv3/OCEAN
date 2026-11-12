@@ -212,7 +212,11 @@ module screen_grid
 #ifdef MPI
     if( nproc .gt. 1 ) then
       call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. MPI_SUCCESS ) return
+      if( ierr_ .ne. MPI_SUCCESS ) then
+        ierr = ierr_
+        return
+      endif
+      if( ierr .ne. 0 ) return
 
       call MPI_BCAST( g%rmax, 1, MPI_DOUBLE_PRECISION, root, comm, ierr )
       if( ierr .ne. MPI_SUCCESS ) return
@@ -461,7 +465,7 @@ module screen_grid
 #endif
 
   subroutine fill_angular_grid( ag, ierr )
-    use OCEAN_mpi, only : comm, myid, root, MPI_DOUBLE_PRECISION, MPI_INTEGER, MPI_SUCCESS, MPI_SUM
+    use OCEAN_mpi, only : comm, myid, root, MPI_DOUBLE_PRECISION, MPI_INTEGER, MPI_SUCCESS, MPI_MAX
     use OCEAN_constants, only : PI_DP
     type( angular_grid ), intent( inout ) :: ag
     integer, intent( inout ) :: ierr
@@ -527,8 +531,11 @@ module screen_grid
 11  continue
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
+    if( ierr_ .ne. MPI_SUCCESS ) then
+      ierr = ierr_
+      return
+    endif
     if( ierr .ne. 0 ) return
-    if( ierr_ .ne. MPI_SUCCESS ) return
     ! done checking against errors from root
 
     ! share from root across all 
@@ -541,8 +548,12 @@ module screen_grid
                 STAT=ierr )
     endif
     abserr = abs( ierr )
-    call MPI_ALLREDUCE( ierr, abserr, 1, MPI_INTEGER, MPI_SUM, comm, ierr_ )
-    if( ierr .ne. 0 .or. ierr_ .ne. MPI_SUCCESS ) return
+    call MPI_ALLREDUCE( abserr, ierr, 1, MPI_INTEGER, MPI_MAX, comm, ierr_ )
+    if( ierr_ .ne. MPI_SUCCESS ) then
+      ierr = ierr_
+      return
+    endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( ag%angles, 3 * ag%nang, MPI_DOUBLE_PRECISION, root, comm, ierr )
     if( ierr .ne. MPI_SUCCESS ) return
@@ -732,7 +743,7 @@ module screen_grid
 #endif
   subroutine make_legendre( rg, ierr )
     use ocean_quadrature, only : ocean_quadrature_loadLegendre
-    use ocean_mpi, only : myid, comm, root, MPI_DOUBLE_PRECISION
+    use ocean_mpi, only : myid, comm, root, MPI_DOUBLE_PRECISION, MPI_SUCCESS
 
     type( radial_grid ), intent( inout ) :: rg
     integer, intent( inout ) :: ierr
@@ -750,10 +761,13 @@ module screen_grid
     if( myid .eq. root ) then
       write( 6, * ) 'Legendre order: ', rg%nr
       call ocean_quadrature_loadLegendre( rg%nr, rg%rad, rg%drad, ierr )
+      if( ierr .ne. 0 ) return
     endif
 #ifdef MPI
     call MPI_BCAST( rg%rad, rg%nr, MPI_DOUBLE_PRECISION, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
     call MPI_BCAST( rg%drad, rg%nr, MPI_DOUBLE_PRECISION, root, comm, ierr )
+    if( ierr .ne. MPI_SUCCESS ) return
 #endif
 
     do ii = 1, rg%nr

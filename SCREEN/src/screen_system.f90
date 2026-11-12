@@ -307,7 +307,11 @@ module screen_system
     if( nproc .gt. 1 ) then
 
       call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. MPI_SUCCESS ) return
+      if( ierr_ .ne. MPI_SUCCESS ) then
+        ierr = ierr_
+        return
+      endif
+      if( ierr .ne. 0 ) return
 
       call share_xyz( ierr )
       if( ierr .ne. 0 ) return
