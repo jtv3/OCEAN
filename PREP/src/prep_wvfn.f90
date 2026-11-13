@@ -216,10 +216,13 @@ module prep_wvfn
     else  ! ikpt == 0, the process isn't doing anything
       ! This makes sure we don't assign pointers to un-allocated arrays
       allocate( valGvecs( 0, 0 ), conGvecs( 0, 0 ), valUofG( 0, 0 ), conUofG( 0, 0 ) )
+      ngvecs(:) = 0
       if( wantTmels ) then
+        allocate( spareValUofG( 0, 0 ) )
         call ocean_tmels_calc( ikpt, ispin, totValBands, conBands, valGvecs, conGvecs, &
                                spareValUofG, conUofG, params%nkpts, totValBands, totConBands, &
                                myValBandStart, myConBandStart, ierr )
+        deallocate( spareValUofG )
       endif
     endif
 
@@ -1121,7 +1124,7 @@ module prep_wvfn
 #ifdef MPI_F08
                           MPI_Datatype, &
 #endif
-                          MPI_DOUBLE_COMPLEX, MPI_OFFSET_KIND, MPI_STATUS_IGNORE, myid, MPI_STATUS_SIZE, MPI_INFO_NULL
+                          MPI_DOUBLE_COMPLEX, MPI_OFFSET_KIND, MPI_STATUS_IGNORE, myid, MPI_STATUS_SIZE, MPI_INFO_NULL, MPI_SEND
 
     integer, intent( in ) :: ikpt, ispin, fileHandle
     complex(DP), intent( in ) :: UofX2(:,:)
@@ -1200,7 +1203,7 @@ module prep_wvfn
       endif
     else
       do ib = 1, nb
-        call MPI_SEND( UofX2( :, ib ), myx, MPI_DOUBLE_COMPLEX, 0, 1, poolComm, MPI_STATUS_IGNORE, ierr )
+        call MPI_SEND( UofX2( :, ib ), myx, MPI_DOUBLE_COMPLEX, 0, 1, poolComm, ierr )
         if( ierr .ne. 0 ) return
       enddo
     endif
@@ -1610,9 +1613,9 @@ module prep_wvfn
   ! everybody (that is working on this k-point) gets a complete copy (all bands) of the valence
   subroutine shareValence( valUofG, spareValUofG, ierr )
 #ifdef MPI_F08
-    use ocean_mpi, only : MPI_DOUBLE_COMPLEX, MPI_COMM
+    use ocean_mpi, only : MPI_DOUBLE_COMPLEX, MPI_COMM, MPI_BCAST
 #else
-    use ocean_mpi, only : MPI_DOUBLE_COMPLEX
+    use ocean_mpi, only : MPI_DOUBLE_COMPLEX, MPI_BCAST
 #endif
     use ocean_dft_files, only : odf_poolComm, odf_nprocPerPool, odf_poolID, odf_getBandsForPoolID, ODF_VALENCE
     complex(DP), intent( in ) :: valUofG( :, : )
@@ -1643,6 +1646,7 @@ module prep_wvfn
                       i, myComm, ierr )
       if( ierr .ne. 0 ) return
 
+      iband = iband + nbands
     enddo
 
 

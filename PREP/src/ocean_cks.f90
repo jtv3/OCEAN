@@ -191,6 +191,8 @@ module ocean_cks
       cband = size( allCksHolders( isite )%con, 2 )
       vband = size( allCksHolders( isite )%val, 2 )
       myk = size( allCksHolders( isite )%con, 3 )
+      ! Do not write padded holder slots beyond the last k/spin task.
+      myk = min( myk, ( params%nspin * params%nkpts - int(offKpt) + nPool - 1 ) / nPool )
       write( filnam, '(A8,A2,I4.4)' ) 'parcksc.', allSites( isite )%elname, allSites( isite )%indx
 
       call MPI_FILE_OPEN( comm, filnam, fflags, MPI_INFO_NULL, fh, ierr )
