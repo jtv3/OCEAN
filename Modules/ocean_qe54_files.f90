@@ -1665,7 +1665,7 @@ module ocean_qe54_files
   subroutine qe54_read_at_kpt( ikpt, ispin, ngvecs, my_bands, gvecs, wfns, ierr )
 #ifdef MPI
     use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, myid, MPI_REQUEST_NULL, &
-                          MPI_STATUS_IGNORE, MPI_UNDEFINED
+                          MPI_STATUS_IGNORE, MPI_UNDEFINED, MPI_ISEND, MPI_ABORT
 !    use OCEAN_mpi
 #endif
     use SCREEN_timekeeper, only : SCREEN_tk_start, SCREEN_tk_stop
@@ -1719,13 +1719,13 @@ module ocean_qe54_files
         read(99)
       enddo
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Share root setup status before starting the G-vector broadcast.
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
         ierr = ierr_
         return
       endif
+      if( ierr .ne. 0 ) return
 
       do i = 1, 19
         read( 99 )
@@ -1755,6 +1755,7 @@ module ocean_qe54_files
       requests(:) = MPI_REQUEST_NULL
 #ifdef MPI
       call MPI_IBCAST( gvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 0 ), ierr )
+      if( ierr .ne. 0 ) goto 111
 #endif
 
       write(1000+myid,*) '***Reading k-point: ', ikpt, ispin
@@ -1804,6 +1805,7 @@ module ocean_qe54_files
           enddo
           if( j .eq. 0 ) then
             call MPI_WAITANY( bufferSize, requests(1:bufferSize), j, MPI_STATUS_IGNORE, ierr )
+            if( ierr .ne. 0 ) goto 111
             write(1000+myid, * ) 'Waited for buffer:', j
             if( j .eq. MPI_UNDEFINED ) j = 1
           endif
@@ -1820,9 +1822,9 @@ module ocean_qe54_files
           call SCREEN_tk_stop("dft-read")
 
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
+          call MPI_ISEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
                          id, 1, pool_comm, requests( j ), ierr )
-          if( ierr .ne. 0 ) return
+          if( ierr .ne. 0 ) goto 111
       
         endif
 
@@ -1875,18 +1877,19 @@ module ocean_qe54_files
 
 
       call MPI_IRECV( wfns, 1, newType, pool_root, 1, pool_comm, requests( 1 ), ierr )
-      if( ierr .ne. 0 ) return
+      if( ierr .ne. 0 ) goto 111
       call MPI_TYPE_FREE( newType, ierr )
-      if( ierr .ne. 0 ) return
+      if( ierr .ne. 0 ) goto 111
+
+      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
+      if( ierr_ .ne. 0 ) then
+        ierr = ierr_
+        goto 111
+      endif
+      if( ierr .ne. 0 ) goto 111
 
       call MPI_IBCAST( gvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 2 ), ierr )
-      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1 ) , ierr )
-        call MPI_CANCEL( requests( 2 ) , ierr )
-        ierr = 5
-        return
-      endif
+      if( ierr .ne. 0 ) goto 111
 
 #endif
 
@@ -1895,7 +1898,7 @@ module ocean_qe54_files
 
 
     call MPI_WAITALL( nr, requests, MPI_STATUSES_IGNORE, ierr )
-    if( ierr .ne. 0 ) return
+    if( ierr .ne. 0 ) goto 111
 
     deallocate( cmplx_wvfn, requests )
 
@@ -1920,6 +1923,15 @@ module ocean_qe54_files
 
     write(1000+myid,*) '***Finishing k-point: ', ikpt, ispin
     call MPI_BARRIER( pool_comm, ierr )
+    return
+
+111 continue
+    ! Keep local and caller buffers alive until MPI terminates the job.
+    write(6,*) 'ERROR: qe54_read_at_kpt', ierr
+#ifdef MPI
+    call MPI_ABORT( inter_comm, ierr, ierr_ )
+#endif
+    stop 1
 
   end subroutine qe54_read_at_kpt
 
