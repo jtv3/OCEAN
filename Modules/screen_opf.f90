@@ -524,19 +524,28 @@ module screen_opf
     else
 
       if( myid .eq. root ) then
-        open(unit=99,file='zeelist',form='formatted',status='old')
-        read(99,*) maxUnique
-        allocate( zeelist( maxUnique ) )
+        open(unit=99,file='zeelist',form='formatted',status='old',IOSTAT=ierr)
+        if( ierr .ne. 0 ) return
+        read(99,*,IOSTAT=ierr) maxUnique
+        if( ierr .ne. 0 ) return
+        allocate( zeelist( maxUnique ), STAT=ierr )
+        if( ierr .ne. 0 ) return
         do i = 1, maxUnique
-          read(99,*) zeelist(i)
+          read(99,*,IOSTAT=ierr) zeelist(i)
+          if( ierr .ne. 0 ) return
         enddo
-        close(99)
+        close(99,IOSTAT=ierr)
+        if( ierr .ne. 0 ) return
       endif
 #ifdef MPI
       call MPI_BARRIER( comm, ierr )
+      if( ierr .ne. 0 ) return
       call MPI_BCAST( maxUnique, 1, MPI_INTEGER, root, comm, ierr )
       if( ierr .ne. 0 ) return
-      if( myid .ne. 0 ) allocate( zeelist( maxUnique ) )
+      if( myid .ne. 0 ) then
+        allocate( zeelist( maxUnique ), STAT=ierr )
+        if( ierr .ne. 0 ) return
+      endif
       call MPI_BCAST(zeelist, maxUnique, MPI_INTEGER, root, comm, ierr )
       if( ierr .ne. 0 ) return
 #endif
@@ -579,6 +588,7 @@ module screen_opf
     integer :: i
 
     allocate( FullTable( maxUnique ), stat=ierr )
+    if( ierr .ne. 0 ) return
     do i = 1, maxUnique
       FullTable( i )%Zee = 0
     enddo
@@ -727,13 +737,20 @@ module screen_opf
 
 #ifdef MPI
     call MPI_BARRIER( comm, ierr_ )
-    call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
-    if( ierr .ne. 0 ) return
     if( ierr_ .ne. 0 ) then
-      if( myid .eq. root ) write(6,*) 'Failed to sync ierr in screen_sites_count_sitelist'
       ierr = ierr_
       return
     endif
+    call MPI_BCAST( ierr, 1, MPI_INTEGER, root, comm, ierr_ )
+    if( ierr_ .ne. 0 ) then
+      if( myid .eq. root ) write(6,*) 'Failed to sync ierr in screen_opf_loadNew'
+      ierr = ierr_
+      return
+    endif
+#endif
+    if( ierr .ne. 0 ) return
+
+#ifdef MPI
     call MPI_BCAST( temp, 3, MPI_INTEGER, root, comm, ierr )
     if( ierr .ne. 0 ) return
 
@@ -744,7 +761,8 @@ module screen_opf
       oh%lMin = temp(1)
       oh%lMax = temp(2)
       oh%nRad = temp(3)
-      allocate( oh%nprojPerChannel( oh%lMin : oh%lMax ) )
+      allocate( oh%nprojPerChannel( oh%lMin : oh%lMax ), STAT=ierr )
+      if( ierr .ne. 0 ) return
     endif
 
     temp(1) = oh%lMax - oh%lMin + 1
@@ -754,9 +772,12 @@ module screen_opf
 
 
     call screen_opf_allocate( oh, ierr )
+    if( ierr .ne. 0 ) return
 
     if( myid .eq. root ) then
       call screen_opf_readProjectors( oh, ierr )
+      ! The caller aborts MPI on error; peers may be waiting for payloads.
+      if( ierr .ne. 0 ) return
     endif
 
 #ifdef MPI
@@ -793,14 +814,18 @@ module screen_opf
         return
       endif
 
-      allocate( readbuf( oh%nprojPerChannel( l ) ) )
-      open( unit=99, file=filnam, form='formatted', status='old' )
+      allocate( readbuf( oh%nprojPerChannel( l ) ), STAT=ierr )
+      if( ierr .ne. 0 ) return
+      open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, oh%nRad
-        read( 99, * ) oh%rad( i ), readbuf( : )
+        read( 99, *, IOSTAT=ierr ) oh%rad( i ), readbuf( : )
+        if( ierr .ne. 0 ) return
         oh%aeProj( i, 1 : oh%nprojPerChannel( l ), l ) = readbuf( : )
 !        read( 99, * ) oh%rad( i ), oh%aeProj( i, 1 : oh%nprojPerChannel( l ), l )
       enddo
-      close( 99 )
+      close( 99, IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
 
       write( filnam, '(A9,A2,I1.1,A1,I3.3)' ) 'zpawinfo/', 'ps', l, 'z', oh%Zee
       inquire( file=filnam, exist=ex )
@@ -810,13 +835,16 @@ module screen_opf
         return
       endif
 
-      open( unit=99, file=filnam, form='formatted', status='old' )
+      open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, oh%nRad
-        read( 99, * ) oh%rad( i ), readbuf( : )
+        read( 99, *, IOSTAT=ierr ) oh%rad( i ), readbuf( : )
+        if( ierr .ne. 0 ) return
         oh%psProj( i, 1 : oh%nprojPerChannel( l ), l ) = readbuf( : )
 !        read( 99, * ) oh%rad( i ), oh%psProj( i, 1 : oh%nprojPerChannel( l ), l )
       enddo
-      close( 99 )
+      close( 99, IOSTAT=ierr )
+      if( ierr .ne. 0 ) return
 
       deallocate( readbuf ) 
 
@@ -864,9 +892,11 @@ module screen_opf
       return
     endif
 
-    open( unit=99, file=filnam, form='formatted', status='old' )
-    read( 99, *  ) oh%rMax, dumi, oh%nRad
-    close( 99 )
+    open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    read( 99, *, IOSTAT=ierr ) oh%rMax, dumi, oh%nRad
+    if( ierr .ne. 0 ) return
+    close( 99, IOSTAT=ierr )
 
   end subroutine screen_opf_readRad
 
@@ -892,20 +922,23 @@ module screen_opf
       return
     endif
 
-    open( unit=99, file=filnam, form='formatted', status='old' )
-    read( 99, *  ) oh%lMin, oh%lMax
+    open( unit=99, file=filnam, form='formatted', status='old', IOSTAT=ierr )
+    if( ierr .ne. 0 ) return
+    read( 99, *, IOSTAT=ierr ) oh%lMin, oh%lMax
+    if( ierr .ne. 0 ) return
     if( oh%lMax .lt. oh%lMin .or. oh%lMin .lt. 0 ) then
       write( 6, * ) 'Bad first line of ', filnam
       ierr = 3
-      close( 99 ) 
       return
     endif
 
-    allocate( oh%nprojPerChannel( oh%lMin : oh%lMax ) )
+    allocate( oh%nprojPerChannel( oh%lMin : oh%lMax ), STAT=ierr )
+    if( ierr .ne. 0 ) return
     do i = oh%lMin, oh%lMax
-      read( 99, * ) oh%nprojPerChannel( i ) 
+      read( 99, *, IOSTAT=ierr ) oh%nprojPerChannel( i )
+      if( ierr .ne. 0 ) return
     enddo
-    close( 99 )
+    close( 99, IOSTAT=ierr )
 
   end subroutine
     
