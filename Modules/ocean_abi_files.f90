@@ -1171,29 +1171,41 @@ module ocean_abi_files
   end subroutine load_ocean_inputs
 
   subroutine set_pools( ierr )
-    use ocean_mpi, only : myid, root, comm, MPI_LOGICAL, MPI_INTEGER
+    use ocean_mpi, only : MPI_INTEGER
     integer, intent( inout ) :: ierr
     !
-    integer :: i, nks
+    integer :: i, nks, ios, close_ios
     logical :: ex
 
     nks = nkpt * nspin
 
-    if(myid .eq. root ) then
-      inquire( file='npools.override', exist=ex)
-      call MPI_BCAST( ex, 1, MPI_LOGICAL, root, comm, ierr )
-      if( ex ) then 
-        open( unit=99, file='npools.override', form='formatted', status='old' )
-        read( 99, * ) npool
-        close( 99 )
-        write(6,*) '****** override: ', npool
+    ! Zero is the sentinel for the unchanged automatic pool selection below.
+    npool = 0
+    if( inter_myid .eq. inter_root ) then
+      inquire( file='npool', exist=ex, iostat=ios )
+      if( ios .eq. 0 ) then
+        if( ex ) then
+          open( unit=99, file='npool', form='formatted', status='old', action='read', iostat=ios )
+          if( ios .eq. 0 ) then
+            read( 99, *, iostat=ios ) npool
+            close( 99, iostat=close_ios )
+            if( close_ios .ne. 0 ) ios = close_ios
+          endif
+          if( ios .ne. 0 ) npool = 0
+          if( npool .lt. 1 .or. npool .gt. min( inter_nproc, nks ) ) npool = 0
+          if( npool .gt. 0 ) then
+            if( mod( inter_nproc, npool ) .ne. 0 ) npool = 0
+          endif
+          if( npool .eq. 0 ) ios = -1
+        endif
       endif
-    else
-      call MPI_BCAST( ex, 1, MPI_LOGICAL, root, comm, ierr )
+      if( ios .ne. 0 ) write( 6, '(A)' ) 'WARNING: npool file was not used; using the default'
     endif
 
-    if( ex ) then
-      call MPI_BCAST( npool, 1, MPI_INTEGER, root, comm, ierr )
+    call MPI_BCAST( npool, 1, MPI_INTEGER, inter_root, inter_comm, ierr )
+    if( ierr .ne. 0 ) return
+
+    if( npool .ne. 0 ) then
       i = inter_nproc / npool
       mypool = 0
       if( i .gt. 0 ) mypool = inter_myid/ i

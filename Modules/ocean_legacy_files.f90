@@ -771,7 +771,8 @@ module ocean_legacy_files
                                     valGvecs, conGvecs, valUofG, conUofG, ierr )
 
 #ifdef MPI
-    use OCEAN_mpi, only : MPI_INTEGER,MPI_DOUBLE_PRECISION, MPI_STATUSES_IGNORE, myid, & 
+    use OCEAN_mpi, only : MPI_INTEGER,MPI_DOUBLE_PRECISION, MPI_STATUSES_IGNORE, MPI_ISEND, MPI_BCAST, &
+                          MPI_IBCAST, myid, &
                           MPI_REQUEST_NULL, MPI_STATUS_IGNORE
 #endif
     integer, intent( in ) :: ikpt, ispin, valNGvecs, conNGvecs, valBAnds, conBands
@@ -825,7 +826,7 @@ module ocean_legacy_files
         ierr = -2
       endif
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Synchronize root setup status before workers post coefficient receives.
 10    continue
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
       if( ierr .ne. 0 ) return
@@ -885,7 +886,7 @@ module ocean_legacy_files
           ! don't send if I am me
           if( id .ne. pool_myid ) then
             write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-            call MPI_IRSEND( re_wvfn( 1, start_band ), nbands_to_send*valngvecs, MPI_DOUBLE_PRECISION, &
+            call MPI_ISEND( re_wvfn( 1, start_band ), nbands_to_send*valngvecs, MPI_DOUBLE_PRECISION, &
                            id, i, pool_comm, requests( id, i ), ierr )
             ! this might not sync up
             if( ierr .ne. 0 ) return
@@ -936,7 +937,7 @@ module ocean_legacy_files
 
           ! don't send if I am me
           if( id .ne. pool_myid ) then
-            call MPI_IRSEND( im_wvfn( 1, start_band ), nbands_to_send*valngvecs, MPI_DOUBLE_PRECISION, &
+            call MPI_ISEND( im_wvfn( 1, start_band ), nbands_to_send*valngvecs, MPI_DOUBLE_PRECISION, &
                            id, 2+i, pool_comm, requests( id + pool_nproc - 1, i), ierr )
             ! this might not sync up
             if( ierr .ne. 0 ) return
@@ -964,6 +965,13 @@ module ocean_legacy_files
       write(1000+myid,*) '   Ngvecs: ', valNGvecs
       write(1000+myid,*) '   Nbands: ', valBands, conBands
 
+      ! Match the root status collective before posting coefficient receives.
+      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
+      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
+        if( ierr_ .ne. 0 ) ierr = ierr_
+        return
+      endif
+
 
       allocate( re_wvfn( valngvecs, valBands + conBands ), im_wvfn( valngvecs, valBands + conBands ) )
 #ifdef MPI
@@ -975,16 +983,6 @@ module ocean_legacy_files
                       requests( 2, 1 ), ierr )
       call MPI_IRECV( im_wvfn(1,valBands+1), valngvecs*conBands, MPI_DOUBLE_PRECISION, pool_root, 4, pool_comm, &
                       requests( 2, 2 ), ierr )
-
-      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1, 1 ) , ierr )
-        call MPI_CANCEL( requests( 1, 2 ) , ierr )
-        call MPI_CANCEL( requests( 2, 1 ) , ierr )
-        call MPI_CANCEL( requests( 2, 2 ) , ierr )
-        ierr = 5
-        return
-      endif
 
       call MPI_IBCAST( valgvecs, 3*valngvecs, MPI_INTEGER, pool_root, pool_comm, gvecReq, ierr )
 #endif

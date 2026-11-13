@@ -960,7 +960,8 @@ module ocean_qe54_files
                                     valGvecs, conGvecs, valUofG, conUofG, ierr )
     use SCREEN_timekeeper, only : SCREEN_tk_start, SCREEN_tk_stop
 #ifdef MPI
-    use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, myid, &
+    use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, MPI_ISEND, MPI_BCAST, &
+                          MPI_IBCAST, myid, &
                           MPI_REQUEST_NULL, MPI_STATUS_IGNORE, MPI_UNDEFINED
 #endif
     integer, intent( in ) :: ikpt, ispin, valNGvecs, conNGvecs, valBAnds, conBands
@@ -1008,7 +1009,7 @@ module ocean_qe54_files
         read(99)
       enddo
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Synchronize root setup status before workers post coefficient receives.
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
       if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
@@ -1054,7 +1055,8 @@ module ocean_qe54_files
       endif
 
 
-      nr = bufferSize
+      ! Reserve the maximum number of remote-rank sends for either band phase.
+      nr = max( pool_nproc - 1, 1 )
       allocate( requests( 0:nr ) )
       requests = MPI_REQUEST_NULL
 #ifdef MPI
@@ -1122,7 +1124,7 @@ module ocean_qe54_files
           call SCREEN_tk_stop("dft-read")
       
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
+          call MPI_ISEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
                          id, 1, pool_comm, requests( j ), ierr )
           if( ierr .ne. 0 ) return
 
@@ -1196,7 +1198,7 @@ module ocean_qe54_files
           call SCREEN_tk_stop("dft-read")
 
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
+          call MPI_ISEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
                          id, 2, pool_comm, requests( j ), ierr )
           if( ierr .ne. 0 ) return
 
@@ -1226,6 +1228,13 @@ module ocean_qe54_files
       write(1000+myid,*) '   Ngvecs: ', test_gvec
       write(1000+myid,*) '   Gamma : ', is_gamma
 
+      ! Match the root status collective before posting coefficient receives.
+      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
+      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
+        if( ierr_ .ne. 0 ) ierr = ierr_
+        return
+      endif
+
       call MPI_TYPE_VECTOR( valBands, test_gvec, valngvecs, MPI_DOUBLE_COMPLEX, valType, ierr )
       if( ierr .ne. 0 ) return
       call MPI_TYPE_COMMIT( valType, ierr )
@@ -1245,13 +1254,6 @@ module ocean_qe54_files
       if( ierr .ne. 0 ) return
 
       call MPI_IBCAST( valGvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 3 ), ierr )
-      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1 ) , ierr )
-        call MPI_CANCEL( requests( 2 ) , ierr )
-        ierr = 5
-        return
-      endif
 
     endif ! root or not
 
@@ -1291,7 +1293,8 @@ module ocean_qe54_files
                                       valGvecs, conGvecs, valUofG, conUofG, ierr )
     use SCREEN_timekeeper, only : SCREEN_tk_start, SCREEN_tk_stop
 #ifdef MPI
-    use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, myid, &
+    use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, MPI_ISEND, MPI_BCAST, &
+                          MPI_IBCAST, myid, &
                           MPI_REQUEST_NULL, MPI_STATUS_IGNORE, MPI_UNDEFINED
 #endif
     integer, intent( in ) :: ikpt, ispin, valNGvecs, conNGvecs, valBAnds, conBands
@@ -1339,7 +1342,7 @@ module ocean_qe54_files
         read(99)
       enddo
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Synchronize root setup status before workers post coefficient receives.
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
       if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
@@ -1379,7 +1382,7 @@ module ocean_qe54_files
         read(99)
       enddo
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Synchronize root setup status before workers post coefficient receives.
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
       if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
@@ -1409,7 +1412,8 @@ module ocean_qe54_files
       allocate( cmplx_wvfn( test_gvec, maxBands, bufferSize ) )
 
 
-      nr = bufferSize
+      ! Reserve the maximum number of remote-rank sends for either band phase.
+      nr = max( pool_nproc - 1, 1 )
       allocate( requests( -1:nr ) )
       requests = MPI_REQUEST_NULL
 #ifdef MPI
@@ -1470,7 +1474,7 @@ module ocean_qe54_files
           call SCREEN_tk_stop("dft-read")
 
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
+          call MPI_ISEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec, MPI_DOUBLE_COMPLEX, &
                          id, 1, pool_comm, requests( j ), ierr )
           if( ierr .ne. 0 ) return
 
@@ -1545,7 +1549,7 @@ module ocean_qe54_files
           call SCREEN_tk_stop("dft-read")
 
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec2, MPI_DOUBLE_COMPLEX, &
+          call MPI_ISEND( cmplx_wvfn( 1, 1, j ), nbands_to_send*test_gvec2, MPI_DOUBLE_COMPLEX, &
                          id, 2, pool_comm, requests( j ), ierr )
           if( ierr .ne. 0 ) return
 
@@ -1568,12 +1572,26 @@ module ocean_qe54_files
 
       if( gammaFullStorage .and. is_gamma ) then
         test_gvec = ( valngvecs + 1 ) / 2
+        test_gvec2 = ( conngvecs + 1 ) / 2
       else
         test_gvec = valngvecs
+        test_gvec2 = conngvecs
       endif
 
       write(1000+myid,*) '   Ngvecs: ', test_gvec
       write(1000+myid,*) '   Gamma : ', is_gamma
+
+      ! Match both root status collectives before posting receives or G broadcasts.
+      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
+      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
+        if( ierr_ .ne. 0 ) ierr = ierr_
+        return
+      endif
+      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
+      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
+        if( ierr_ .ne. 0 ) ierr = ierr_
+        return
+      endif
 
       call MPI_TYPE_VECTOR( valBands, test_gvec, valngvecs, MPI_DOUBLE_COMPLEX, valType, ierr )
       if( ierr .ne. 0 ) return
@@ -1584,31 +1602,17 @@ module ocean_qe54_files
       call MPI_TYPE_FREE( valType, ierr )
       if( ierr .ne. 0 ) return
 
-      call MPI_TYPE_VECTOR( conBands, test_gvec, conngvecs, MPI_DOUBLE_COMPLEX, conType, ierr )
+      call MPI_TYPE_VECTOR( conBands, test_gvec2, conngvecs, MPI_DOUBLE_COMPLEX, conType, ierr )
       if( ierr .ne. 0 ) return
       call MPI_TYPE_COMMIT( conType, ierr )
       if( ierr .ne. 0 ) return
       call MPI_IRECV( conUofG, 1, conType, pool_root, 2, pool_comm, requests( 2 ), ierr )
       if( ierr .ne. 0 ) return
-      call MPI_TYPE_FREE( valType, ierr )
+      call MPI_TYPE_FREE( conType, ierr )
       if( ierr .ne. 0 ) return
 
       call MPI_IBCAST( valGvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 3 ), ierr )
-      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1 ) , ierr )
-        call MPI_CANCEL( requests( 2 ) , ierr )
-        ierr = 5
-        return
-      endif
-      call MPI_BCAST( conGvecs, 3*test_gvec2, MPI_INTEGER, pool_root, pool_comm, requests( 4 ), ierr )
-      call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1 ) , ierr )
-        call MPI_CANCEL( requests( 2 ) , ierr )
-        ierr = 5
-        return
-      endif
+      call MPI_IBCAST( conGvecs, 3*test_gvec2, MPI_INTEGER, pool_root, pool_comm, requests( 4 ), ierr )
 
     endif ! root or not
 
