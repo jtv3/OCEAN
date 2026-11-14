@@ -273,14 +273,18 @@ module ocean_legacy_files
       bstart2 = brange(3) - brange(1) + 1
       bstop2  = brange(4) - brange(1) + 1
 
-      open( unit=99, file='enkfile', form='formatted', status='old' )
+      open( unit=99, file='enkfile', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
       do ispn = 1, nspin
         do ikpt = 1, product(kpts(:))
-          read( 99, * ) energies( 1 : bstop1, ikpt, ispn )
-          read( 99, * ) energies( bstart2 : bstop2, ikpt, ispn )
+          read( 99, *, iostat=ierr ) energies( 1 : bstop1, ikpt, ispn )
+          if( ierr .ne. 0 ) return
+          read( 99, *, iostat=ierr ) energies( bstart2 : bstop2, ikpt, ispn )
+          if( ierr .ne. 0 ) return
         enddo
       enddo
-      close( 99 )
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
       ! We are using Hartree
       energies( :, :, : ) = 0.5_dp * energies( :, :, : )
     endif
@@ -371,25 +375,41 @@ module ocean_legacy_files
 
 
     if( inter_myid .eq. inter_root ) then
-      open( unit=99, file='masterwfile', form='formatted', status='old' )
-      read( 99, * ) nfiles
-      close( 99 )
-      allocate( file_names( nfiles ), file_indx( nfiles ) )
-      open( unit=99, file='listwfile', form='formatted', status='old' )
+      open( unit=99, file='masterwfile', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, *, iostat=ierr ) nfiles
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      allocate( file_names( nfiles ), file_indx( nfiles ), STAT=ierr )
+      if( ierr .ne. 0 ) return
+      open( unit=99, file='listwfile', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, nfiles
-        read( 99, * ) file_indx( i ), file_names( i )
+        read( 99, *, iostat=ierr ) file_indx( i ), file_names( i )
+        if( ierr .ne. 0 ) return
       enddo
-      close( 99 )
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
-      open(unit=99,file='brange.ipt', form='formatted', status='old' )
-      read(99,*) brange(:)
-      close(99)
-      open(unit=99,file='kmesh.ipt', form='formatted', status='old' )
-      read(99,*) kpts(:)
-      close(99)
-      open(unit=99,file='nspin', form='formatted', status='old' )
-      read(99,*) nspin
-      close(99)
+      open(unit=99,file='brange.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) brange(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      open(unit=99,file='kmesh.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) kpts(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      open(unit=99,file='nspin', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) nspin
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       if( present( bands_ ) ) then
         bands(:) = bands_
@@ -408,7 +428,8 @@ module ocean_legacy_files
     if( ierr .ne. 0 ) return
 
     if( inter_myid .ne. inter_root ) then
-      allocate( file_names( nfiles ), file_indx( nfiles ) )
+      allocate( file_names( nfiles ), file_indx( nfiles ), STAT=ierr )
+      if( ierr .ne. 0 ) return
     endif
 
     call MPI_BCAST( file_indx, nfiles,  MPI_INTEGER, inter_root, inter_comm, ierr )
@@ -545,9 +566,12 @@ module ocean_legacy_files
         ierr = 12
         goto 111
       endif
-      open( unit=99,file=file_names(itarg), form='unformatted', status='old' )
-      read( 99 ) gvecs
-      close( 99 )
+      open( unit=99,file=file_names(itarg), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, iostat=ierr ) gvecs
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
     endif
 
 !    write(6,*) 'gvecs', pool_root, pool_comm
@@ -555,11 +579,11 @@ module ocean_legacy_files
     
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, i )
-    if( ierr .ne. 0 ) return
     if( i .ne. 0 ) then
       ierr = i
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( gvecs, 1, MPI_INTEGER, pool_root, pool_comm, ierr )
     if( ierr .ne. 0 ) return
@@ -570,7 +594,8 @@ module ocean_legacy_files
 
   subroutine olf_read_at_kpt( ikpt, ispin, ngvecs, my_bands, gvecs, wfns, ierr )
 #ifdef MPI
-    use OCEAN_mpi, only : MPI_INTEGER,MPI_DOUBLE_PRECISION, MPI_STATUSES_IGNORE, myid, MPI_REQUEST_NULL
+    use OCEAN_mpi, only : MPI_INTEGER,MPI_DOUBLE_PRECISION, MPI_STATUSES_IGNORE, myid, MPI_REQUEST_NULL, &
+                          MPI_ISEND, MPI_ABORT
 !    use OCEAN_mpi
 #endif
     integer, intent( in ) :: ikpt, ispin, ngvecs, my_bands
@@ -603,41 +628,49 @@ module ocean_legacy_files
         goto 10
       endif
 
-      open( unit=99, file=file_names( itarg ), form='unformatted', status='old' )
-      read( 99 ) test_gvec
+      open( unit=99, file=file_names( itarg ), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, iostat=ierr ) test_gvec
+      if( ierr .ne. 0 ) return
       if( test_gvec .ne. ngvecs ) then
         ierr = -2
       endif
 
-      ! Error synch. Also ensures that the other procs have posted their recvs
+      ! Share root setup status before starting the G-vector broadcast.
 10    continue
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
         ierr = ierr_
         return
       endif
+      if( ierr .ne. 0 ) return
 
-      allocate( trans_gvecs( ngvecs, 3 ) )
-      read( 99 ) trans_gvecs
+      allocate( trans_gvecs( ngvecs, 3 ), STAT=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, iostat=ierr ) trans_gvecs
+      if( ierr .ne. 0 ) return
       gvecs = transpose( trans_gvecs )
       deallocate( trans_gvecs )
 
       nr = 2 * ( pool_nproc - 1 ) + 1 
 !      nr = 2 * pool_nproc
-      allocate( requests( 0:nr ) )
+      allocate( requests( 0:nr ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
 #ifdef MPI
       call MPI_IBCAST( gvecs, 3*ngvecs, MPI_INTEGER, pool_root, pool_comm, requests( nr ), ierr )
+      if( ierr .ne. 0 ) goto 111
 #endif
-      allocate( re_wvfn( ngvecs, nbands_to_read ), im_wvfn( ngvecs, nbands_to_read ) )
+      allocate( re_wvfn( ngvecs, nbands_to_read ), im_wvfn( ngvecs, nbands_to_read ), STAT=ierr )
+      if( ierr .ne. 0 ) goto 111
 
       write(1000+myid,*) '***Reading k-point: ', ikpt, ispin
       write(1000+myid,*) '   Ngvecs: ', ngvecs
       write(1000+myid,*) '   Nbands: ', nbands_to_read
 
 
-      read( 99 ) re_wvfn
+      read( 99, iostat=ierr ) re_wvfn
+      if( ierr .ne. 0 ) goto 111
 
       ! slow way, but easy to program
       stop_band = 1
@@ -660,10 +693,10 @@ module ocean_legacy_files
         ! don't send if I am me
         if( id .ne. pool_myid ) then
           write(1000+myid,'(A,3(1X,I8))') '   Sending ...', id, start_band, nbands_to_send
-          call MPI_IRSEND( re_wvfn( 1, start_band ), nbands_to_send*ngvecs, MPI_DOUBLE_PRECISION, &
+          call MPI_ISEND( re_wvfn( 1, start_band ), nbands_to_send*ngvecs, MPI_DOUBLE_PRECISION, &
                          id, 1, pool_comm, requests( id ), ierr )
           ! this might not sync up
-          if( ierr .ne. 0 ) return
+          if( ierr .ne. 0 ) goto 111
         else
           write(1000+myid,'(A,3(1X,I8))') "   Don't Send: ", start_band, nbands_to_send, my_bands
         endif
@@ -671,7 +704,7 @@ module ocean_legacy_files
         if( mod( id+1, 16 ) .eq. 0 ) then
           call MPI_WAITALL( 16, requests( id-15 ), MPI_STATUSES_IGNORE, ierr )
           ! this might not sync up
-          if( ierr .ne. 0 ) return
+          if( ierr .ne. 0 ) goto 111
           write(1000+myid, '(A,1X,I8)' ) '   triggered intermediate send', id
         endif
 
@@ -680,7 +713,8 @@ module ocean_legacy_files
       enddo
 #endif
 
-      read( 99 ) im_wvfn
+      read( 99, iostat=ierr ) im_wvfn
+      if( ierr .ne. 0 ) goto 111
       stop_band = 1
       if( brange( 2 ) .ge. brange( 3 ) ) then
         start_band = brange(2) - brange(1) + 1
@@ -699,16 +733,16 @@ module ocean_legacy_files
 
         ! don't send if I am me
         if( id .ne. pool_myid ) then
-          call MPI_IRSEND( im_wvfn( 1, start_band ), nbands_to_send*ngvecs, MPI_DOUBLE_PRECISION, &
+          call MPI_ISEND( im_wvfn( 1, start_band ), nbands_to_send*ngvecs, MPI_DOUBLE_PRECISION, &
                          id, 2, pool_comm, requests( id + pool_nproc - 1), ierr )
           ! this might not sync up
-          if( ierr .ne. 0 ) return
+          if( ierr .ne. 0 ) goto 111
         endif
 
         if( mod( id+1, 16 ) .eq. 0 ) then
           call MPI_WAITALL( 16, requests( id + pool_nproc - 16 ), MPI_STATUSES_IGNORE, ierr )
           ! this might not sync up
-          if( ierr .ne. 0 ) return
+          if( ierr .ne. 0 ) goto 111
           write(1000+myid, '(A,1X,I8)' ) '   triggered intermediate send', id
         endif
 
@@ -716,33 +750,39 @@ module ocean_legacy_files
       enddo
 #endif
 
-      close( 99 )
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) goto 111
+      nr = nr + 1
 
     else
       nr = 3
-      allocate( requests( nr ) )
+      allocate( requests( nr ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
       write(1000+myid,*) '***Receiving k-point: ', ikpt, ispin
       write(1000+myid,*) '   Ngvecs: ', ngvecs
       write(1000+myid,*) '   Nbands: ', bands(2)-bands(1)+1
 
 
-      allocate( re_wvfn( ngvecs, my_bands ), im_wvfn( ngvecs, my_bands ) )
+      allocate( re_wvfn( ngvecs, my_bands ), im_wvfn( ngvecs, my_bands ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 #ifdef MPI
       call MPI_IRECV( re_wvfn, ngvecs*my_bands, MPI_DOUBLE_PRECISION, pool_root, 1, pool_comm, & 
                       requests( 1 ), ierr )
+      if( ierr .ne. 0 ) goto 111
       call MPI_IRECV( im_wvfn, ngvecs*my_bands, MPI_DOUBLE_PRECISION, pool_root, 2, pool_comm, &
                       requests( 2 ), ierr )
+      if( ierr .ne. 0 ) goto 111
 
       call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, ierr_ )
-      if( ierr .ne. 0 .or. ierr_ .ne. 0 ) then
-        call MPI_CANCEL( requests( 1 ) , ierr )
-        call MPI_CANCEL( requests( 2 ) , ierr )
-        ierr = 5
-        return
+      if( ierr_ .ne. 0 ) then
+        ierr = ierr_
+        goto 111
       endif
+      if( ierr .ne. 0 ) goto 111
 
       call MPI_IBCAST( gvecs, 3*ngvecs, MPI_INTEGER, pool_root, pool_comm, requests( 3 ), ierr )
+      if( ierr .ne. 0 ) goto 111
 #endif
 
 
@@ -750,7 +790,7 @@ module ocean_legacy_files
 
 
     call MPI_WAITALL( nr, requests, MPI_STATUSES_IGNORE, ierr )
-    if( ierr .ne. 0 ) return
+    if( ierr .ne. 0 ) goto 111
 
     if( pool_myid .eq. pool_root ) then
       wfns( :, : ) = cmplx( re_wvfn( :, stop_band:my_bands+stop_band-1 ), &
@@ -762,6 +802,15 @@ module ocean_legacy_files
 
     write(1000+myid,*) '***Finishing k-point: ', ikpt, ispin
     call MPI_BARRIER( pool_comm, ierr )
+    return
+
+111 continue
+    ! Keep local and caller buffers alive until MPI terminates the job.
+    write(6,*) 'ERROR: olf_read_at_kpt', ierr
+#ifdef MPI
+    call MPI_ABORT( inter_comm, ierr, ierr_ )
+#endif
+    stop 1
 
   end subroutine olf_read_at_kpt
 

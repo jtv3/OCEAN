@@ -670,9 +670,12 @@ module ocean_dft_files
     if( myid .eq. root ) then
       inquire( file='wvfn.ipt', exist=ex )
       if( ex ) then
-        open( unit=99, file='wvfn.ipt', form='formatted', status='old' )
+        open( unit=99, file='wvfn.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
         read( 99, *, IOSTAT=ierr  ) stringFlavor
-        close( 99 )
+        if( ierr .ne. 0 ) return
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         select case (trim(stringFlavor))
           case ('qe54')
             flavor = QE54_FLAVOR
@@ -689,6 +692,7 @@ module ocean_dft_files
       write(6,*) 'Wavefunction format:', flavorToText(flavor)
     endif
     call MPI_BCAST( flavor, 1, MPI_INTEGER, root, comm, ierr )
+    if( ierr .ne. 0 ) return
 
     select case( flavor )
 

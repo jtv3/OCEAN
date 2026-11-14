@@ -423,9 +423,11 @@ module ocean_qe54_files
       do ispn = 1, nspin
         do ikpt = 1, product(kpts(:))
 
-          open( unit=99, file=qe54_eigFile(ikpt,ispn), form='formatted', status='old' )
+          open( unit=99, file=qe54_eigFile(ikpt,ispn), form='formatted', status='old', iostat=ierr )
+          if( ierr .ne. 0 ) return
           do i = 1, 9
-            read(99,*) !lineBurn
+            read(99,*, iostat=ierr ) !lineBurn
+            if( ierr .ne. 0 ) return
 !            write(6,*) lineBurn
           enddo
 !          do i = 1, bands( 1 ) - 1
@@ -433,10 +435,12 @@ module ocean_qe54_files
 !            write(6,*) dumf
 !          enddo
           do i = 1, bstop2
-            read(99,*) energies( i, ikpt, ispn )
+            read(99,*, iostat=ierr ) energies( i, ikpt, ispn )
+            if( ierr .ne. 0 ) return
           enddo
 
-          close( 99 )
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) return
         enddo
       enddo
 !      energies(:,:,:) = energies(:,:,:) * 2.0_DP
@@ -630,21 +634,30 @@ module ocean_qe54_files
 
 
     if( inter_myid .eq. inter_root ) then
-      open( unit=99, file='prefix', form='formatted', status='old' )
-      read(99,*)  tmp
-      close( 99 )
+      open( unit=99, file='prefix', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr )  tmp
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
       write( prefix, '(a,a,a)' ) 'Out/', trim(tmp), '.save/'
       write( prefixSplit, '(a,a,a)' ) 'Out/', trim(tmp), '_shift.save/'
 
-      open(unit=99,file='brange.ipt', form='formatted', status='old' )
-      read(99,*) brange(:)
-      close(99)
+      open(unit=99,file='brange.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) brange(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='bands.ipt', exist=ex )
       if( ex ) then
-        open(unit=99,file='bands.ipt', form='formatted', status='old' )
-        read(99,*) bands(:)
-        close(99)
+        open(unit=99,file='bands.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) bands(:)
+        if( ierr .ne. 0 ) return
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       else
 !        open(unit=99,file='brange.ipt', form='formatted', status='old' )
 !        read(99,*) brange(:)
@@ -652,18 +665,27 @@ module ocean_qe54_files
         bands(2) = brange(4)
         bands(1) = brange(1)
       endif
-      open(unit=99,file='kmesh.ipt', form='formatted', status='old' )
-      read(99,*) kpts(:)
-      close(99)
-      open(unit=99,file='nspin', form='formatted', status='old' )
-      read(99,*) nspin
-      close(99)
+      open(unit=99,file='kmesh.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) kpts(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      open(unit=99,file='nspin', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) nspin
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='gamma', exist=ex )
       if( ex ) then
-        open(unit=99,file='gamma', form='formatted', status='old' )
-        read(99,*) is_gamma
-        close(99)
+        open(unit=99,file='gamma', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) is_gamma
+        if( ierr .ne. 0 ) return
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       else
         is_gamma = .false.
       endif
@@ -671,9 +693,12 @@ module ocean_qe54_files
 
       inquire( file='qinunitsofbvectors.ipt', exist=ex )
       if( ex ) then
-        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old')
-        read( 99 , * ) qinb(:)
-        close( 99 )
+        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99 , *, iostat=ierr ) qinb(:)
+        if( ierr .ne. 0 ) return
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         if( abs( qinb(1) ) + abs( qinb(2) ) + abs( qinb(3) ) > tol ) is_shift = .true.
       else
         is_shift = .false.
@@ -683,9 +708,12 @@ module ocean_qe54_files
       if( is_shift ) then 
         inquire( file='dft.split', exist=ex )
         if( ex ) then
-          open( unit=99, file='dft.split', form='formatted', status='old')
-          read( 99, * ) is_split
-          close( 99 )
+          open( unit=99, file='dft.split', form='formatted', status='old', iostat=ierr )
+          if( ierr .ne. 0 ) return
+          read( 99, *, iostat=ierr ) is_split
+          if( ierr .ne. 0 ) return
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) return
         endif
       endif
 
@@ -830,12 +858,16 @@ module ocean_qe54_files
     if( pool_myid .eq. pool_root ) then
       write(myid+1000,*) 'Opening file ', trim(qe54_gkvFile( ikpt, ispin ))
       flush(myid+1000)
-      open( unit=99,file=trim(qe54_gkvFile( ikpt, ispin )), form='unformatted', status='old' )
+      open( unit=99,file=trim(qe54_gkvFile( ikpt, ispin )), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, 12
-        read( 99 )
+        read( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       enddo
-      read(99) crap, gvecs
-      close( 99 )
+      read(99, iostat=ierr ) crap, gvecs
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
       ! Do we want to expand the coeffs inside this module?
       if( gammaFullStorage .and. is_gamma ) gvecs = 2 * gvecs - 1
     endif
@@ -845,11 +877,11 @@ module ocean_qe54_files
     
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, i )
-    if( ierr .ne. 0 ) return
     if( i .ne. 0 ) then
       ierr = i
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( gvecs, 1, MPI_INTEGER, pool_root, pool_comm, ierr )
     if( ierr .ne. 0 ) return
@@ -1696,11 +1728,14 @@ module ocean_qe54_files
     if( pool_myid .eq. pool_root ) then
     
       ! get gvecs first
-      open( unit=99, file=qe54_gkvFile( ikpt, ispin), form='unformatted', status='old' )
+      open( unit=99, file=qe54_gkvFile( ikpt, ispin), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
       do i = 1, 12
-        read( 99 )
+        read( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       enddo
-      read(99) crap, test_gvec
+      read(99, iostat=ierr ) crap, test_gvec
+      if( ierr .ne. 0 ) return
       ! Are we expanding the wave functions here?
       if( gammaFullStorage .and. is_gamma ) then
         if( ( 2 * test_gvec - 1 ) .ne. ngvecs ) then
@@ -1716,7 +1751,8 @@ module ocean_qe54_files
         endif
       endif
       do i = 1, 5
-        read(99)
+        read(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       enddo
 
       ! Share root setup status before starting the G-vector broadcast.
@@ -1728,12 +1764,15 @@ module ocean_qe54_files
       if( ierr .ne. 0 ) return
 
       do i = 1, 19
-        read( 99 )
+        read( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       enddo
 
       ! Using test_gvec for gamma support
-      read( 99 ) crap, gvecs( :, 1:test_gvec )
-      close( 99 )
+      read( 99, iostat=ierr ) crap, gvecs( :, 1:test_gvec )
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       maxBands = qe54_getAllBandsForPoolID( 0 )
       do id = 1, pool_nproc - 1
@@ -1746,12 +1785,14 @@ module ocean_qe54_files
 !      bufferSize = floor( 1073741824.0_DP /  ( real( test_gvec, DP ) * real( maxBands, DP ) ) )
       bufferSize = min( bufferSize, pool_nproc - 1 )
       bufferSize = max( bufferSize, 1 )
-      allocate( cmplx_wvfn( test_gvec, maxBands, bufferSize ) )
+      allocate( cmplx_wvfn( test_gvec, maxBands, bufferSize ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 
 !      nr = pool_nproc 
       nr = bufferSize
 !      nr = 2 * pool_nproc
-      allocate( requests( 0:nr ) )
+      allocate( requests( 0:nr ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
 #ifdef MPI
       call MPI_IBCAST( gvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 0 ), ierr )
@@ -1763,9 +1804,11 @@ module ocean_qe54_files
       write(1000+myid,*) '   Nbands: ', nbands
       write(1000+myid,*) '   Nbuffer:', bufferSize
 
-      open( unit=99, file=qe54_evcFile( ikpt, ispin), form='unformatted', status='old' )
+      open( unit=99, file=qe54_evcFile( ikpt, ispin), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) goto 111
       do i = 1, 12
-        read(99)
+        read(99, iostat=ierr )
+        if( ierr .ne. 0 ) goto 111
       enddo
 
       ! if we are skipping bands, do that here
@@ -1786,11 +1829,16 @@ module ocean_qe54_files
         if( id .eq. pool_myid ) then
           call SCREEN_tk_start("dft-read")
           do i = 1, nbands_to_send
-            read(99)
-            read(99)
-            read( 99 ) crap, wfns( 1:test_gvec, i )
-            read(99)
-            read(99)
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read( 99, iostat=ierr ) crap, wfns( 1:test_gvec, i )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
           enddo
           call SCREEN_tk_stop("dft-read")
         
@@ -1813,11 +1861,16 @@ module ocean_qe54_files
 
           call SCREEN_tk_start("dft-read")
           do i = 1, nbands_to_send
-            read(99)
-            read(99)
-            read( 99 ) crap, cmplx_wvfn( 1:test_gvec, i, j )
-            read(99)
-            read(99)
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read( 99, iostat=ierr ) crap, cmplx_wvfn( 1:test_gvec, i, j )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
+            read(99, iostat=ierr )
+            if( ierr .ne. 0 ) goto 111
           enddo
           call SCREEN_tk_stop("dft-read")
 
@@ -1849,12 +1902,14 @@ module ocean_qe54_files
       enddo
 #endif
 
-      close( 99 )
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) goto 111
 
       nr=nr+1
     else
       nr = 2
-      allocate( requests( nr ), cmplx_wvfn(1,1,1) )
+      allocate( requests( nr ), cmplx_wvfn(1,1,1), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
       write(1000+myid,*) '***Receiving k-point: ', ikpt, ispin
       write(1000+myid,*) '   Ngvecs: ', ngvecs

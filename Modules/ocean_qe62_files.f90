@@ -528,21 +528,30 @@ module ocean_qe62_files
 
 
     if( inter_myid .eq. inter_root ) then
-      open( unit=99, file='prefix', form='formatted', status='old' )
-      read(99,*)  tmp
-      close( 99 )
+      open( unit=99, file='prefix', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr )  tmp
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
       write( prefix, '(a,a,a)' ) 'Out/', trim(tmp), '.save/'
       write( prefixSplit, '(a,a,a)' ) 'Out_shift/', trim(tmp), '.save/'
 
-      open(unit=99,file='brange.ipt', form='formatted', status='old' )
-      read(99,*) brange(:)
-      close(99)
+      open(unit=99,file='brange.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) brange(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='bands.ipt', exist=ex )
       if( ex ) then
-        open(unit=99,file='bands.ipt', form='formatted', status='old' )
-        read(99,*) bands(:)
-        close(99)
+        open(unit=99,file='bands.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) bands(:)
+        if( ierr .ne. 0 ) return
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       else
 !        open(unit=99,file='brange.ipt', form='formatted', status='old' )
 !        read(99,*) brange(:)
@@ -550,18 +559,27 @@ module ocean_qe62_files
         bands(2) = brange(4)
         bands(1) = brange(1)
       endif
-      open(unit=99,file='kmesh.ipt', form='formatted', status='old' )
-      read(99,*) kpts(:)
-      close(99)
-      open(unit=99,file='nspin', form='formatted', status='old' )
-      read(99,*) nspin
-      close(99)
+      open(unit=99,file='kmesh.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) kpts(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      open(unit=99,file='nspin', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) nspin
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='gamma', exist=ex )
       if( ex ) then
-        open(unit=99,file='gamma', form='formatted', status='old' )
-        read(99,*) is_gamma
-        close(99)
+        open(unit=99,file='gamma', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) is_gamma
+        if( ierr .ne. 0 ) return
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       else
         is_gamma = .false.
       endif
@@ -569,9 +587,12 @@ module ocean_qe62_files
 
       inquire( file='qinunitsofbvectors.ipt', exist=ex )
       if( ex ) then
-        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old')
-        read( 99 , * ) qinb(:)
-        close( 99 )
+        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99 , *, iostat=ierr ) qinb(:)
+        if( ierr .ne. 0 ) return
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         if( abs( qinb(1) ) + abs( qinb(2) ) + abs( qinb(3) ) > tol ) is_shift = .true.
       else
         is_shift = .false.
@@ -581,9 +602,12 @@ module ocean_qe62_files
       if( is_shift ) then 
         inquire( file='dft.split', exist=ex )
         if( ex ) then
-          open( unit=99, file='dft.split', form='formatted', status='old')
-          read( 99, * ) is_split
-          close( 99 )
+          open( unit=99, file='dft.split', form='formatted', status='old', iostat=ierr )
+          if( ierr .ne. 0 ) return
+          read( 99, *, iostat=ierr ) is_split
+          if( ierr .ne. 0 ) return
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) return
         endif
       endif
 !      if( is_split ) is_shift = .true.
@@ -595,18 +619,23 @@ module ocean_qe62_files
       nkpts = product(kpts(:) )
       nbv = brange(2)-brange(1) + 1
       nbc = brange(4)-brange(3) + 1
-      allocate( internal_val_energies( nbv, nkpts, nspin ), internal_con_energies( nbc, nkpts, nspin ) )
+      allocate( internal_val_energies( nbv, nkpts, nspin ), internal_con_energies( nbc, nkpts, nspin ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='enkfile_raw', exist=ex )
       if( ex ) then
-        open( unit=99, file='enkfile_raw', form='formatted', status='old')
+        open( unit=99, file='enkfile_raw', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
         do j = 1, nspin
           do i = 1, nkpts
-            read(99,*) internal_val_energies( :, i, j )
-            read(99,*) internal_con_energies( :, i, j )
+            read(99,*, iostat=ierr ) internal_val_energies( :, i, j )
+            if( ierr .ne. 0 ) return
+            read(99,*, iostat=ierr ) internal_con_energies( :, i, j )
+            if( ierr .ne. 0 ) return
           enddo
         enddo
-        close(99)
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         internal_val_energies( :, :, : ) = internal_val_energies( :, :, : ) * 0.5_DP
         internal_con_energies( :, :, : ) = internal_con_energies( :, :, : ) * 0.5_DP
       else
@@ -616,8 +645,10 @@ module ocean_qe62_files
           return
         endif
 
-        open( unit=99, file='QE_EIGS.txt', form='formatted', status='old')
-        read(99,*) test_brange(:), test_nk, test_nspin
+        open( unit=99, file='QE_EIGS.txt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) test_brange(:), test_nk, test_nspin
+        if( ierr .ne. 0 ) return
         if( test_brange(1) .gt. brange(1) ) ierr = 6573
         if( test_brange(2) .lt. brange(2) ) ierr = 6574
         if( .not. is_split ) then
@@ -629,14 +660,18 @@ module ocean_qe62_files
         if( ierr .ne. 0 ) return
 
         allocate( tve( test_brange(1):test_brange(2), nkpts, nspin ),  &
-                  tce( test_brange(3):test_brange(4), nkpts, nspin ) )
+                  tce( test_brange(3):test_brange(4), nkpts, nspin ), STAT=ierr )
+        if( ierr .ne. 0 ) return
         do j = 1, nspin
           do i = 1, nkpts
-            read(99,*) tve( :, i, j )
-            read(99,*) tce( :, i, j )
+            read(99,*, iostat=ierr ) tve( :, i, j )
+            if( ierr .ne. 0 ) return
+            read(99,*, iostat=ierr ) tce( :, i, j )
+            if( ierr .ne. 0 ) return
           enddo
         enddo
-        close( 99 )
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         internal_val_energies( :, :, : ) = tve( brange(1):brange(2), :, : ) * 0.5_DP
         if( .not. is_split ) then
           internal_con_energies( :, :, : ) = tce( brange(3):brange(4), :, : ) * 0.5_DP
@@ -651,8 +686,10 @@ module ocean_qe62_files
             return
           endif
             
-          open( unit=99, file='QE_EIGS_shift.txt', form='formatted', status='old')
-          read(99,*) test_brange(:), test_nk, test_nspin
+          open( unit=99, file='QE_EIGS_shift.txt', form='formatted', status='old', iostat=ierr )
+          if( ierr .ne. 0 ) return
+          read(99,*, iostat=ierr ) test_brange(:), test_nk, test_nspin
+          if( ierr .ne. 0 ) return
           if( test_brange(3) .gt. brange(3) ) ierr = 6582
           if( test_brange(4) .lt. brange(4) ) ierr = 6583
           if( test_nk .ne. nkpts ) ierr = 6580
@@ -660,14 +697,18 @@ module ocean_qe62_files
           if( ierr .ne. 0 ) return 
           
           allocate( tve( test_brange(1):test_brange(2), nkpts, nspin ),  &
-                    tce( test_brange(3):test_brange(4), nkpts, nspin ) )
+                    tce( test_brange(3):test_brange(4), nkpts, nspin ), STAT=ierr )
+          if( ierr .ne. 0 ) return
           do j = 1, nspin
             do i = 1, nkpts
-              read(99,*) tve( :, i, j )
-              read(99,*) tce( :, i, j )
+              read(99,*, iostat=ierr ) tve( :, i, j )
+              if( ierr .ne. 0 ) return
+              read(99,*, iostat=ierr ) tce( :, i, j )
+              if( ierr .ne. 0 ) return
             enddo
           enddo
-          close( 99 )
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) return
           internal_con_energies( :, :, : ) = tce( brange(3):brange(4), :, : ) * 0.5_DP
           deallocate( tve, tce )
         endif
@@ -678,11 +719,11 @@ module ocean_qe62_files
     endif
 #ifdef MPI
       call MPI_BCAST( ierr, 1, MPI_INTEGER, inter_root, inter_comm, ierr_ )
-      if( ierr .ne. 0 ) return
       if( ierr_ .ne. 0 ) then
         ierr = ierr_
         return
       endif
+      if( ierr .ne. 0 ) return
 
     call MPI_BCAST( nfiles, 1, MPI_INTEGER, inter_root, inter_comm, ierr )
     if( ierr .ne. 0 ) return
@@ -718,7 +759,8 @@ module ocean_qe62_files
       nkpts = product(kpts(:) )
       nbv = brange(2)-brange(1) + 1
       nbc = brange(4)-brange(3) + 1
-      allocate( internal_val_energies( nbv, nkpts, nspin ), internal_con_energies( nbc, nkpts, nspin ) )
+      allocate( internal_val_energies( nbv, nkpts, nspin ), internal_con_energies( nbc, nkpts, nspin ), STAT=ierr )
+      if( ierr .ne. 0 ) return
     endif
     call MPI_BCAST( internal_val_energies, nbv * nkpts * nspin, MPI_DOUBLE_PRECISION, inter_root, inter_comm, ierr )
     if( ierr .ne. 0 ) return
@@ -943,10 +985,14 @@ module ocean_qe62_files
     if( pool_myid .eq. pool_root ) then
       write(myid+1000,*) 'Opening file ', trim(qe62_gkvFile( ikpt, ispin ))
 !      flush(myid+1000)
-      open( unit=99,file=trim(qe62_gkvFile( ikpt, ispin )), form='unformatted', status='old' )
-      read( 99 )
-      read(99) crap, gvecs
-      close( 99 )
+      open( unit=99,file=trim(qe62_gkvFile( ikpt, ispin )), form='unformatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99, iostat=ierr ) crap, gvecs
+      if( ierr .ne. 0 ) return
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) return
       ! Do we want to expand the coeffs inside this module?
       if( gammaFullStorage .and. is_gamma ) gvecs = 2 * gvecs - 1
     endif
@@ -956,11 +1002,11 @@ module ocean_qe62_files
     
 #ifdef MPI
     call MPI_BCAST( ierr, 1, MPI_INTEGER, pool_root, pool_comm, i )
-    if( ierr .ne. 0 ) return
     if( i .ne. 0 ) then
       ierr = i
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call MPI_BCAST( gvecs, 1, MPI_INTEGER, pool_root, pool_comm, ierr )
     if( ierr .ne. 0 ) return
@@ -1709,7 +1755,10 @@ module ocean_qe62_files
 #ifdef MPI
     use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUSES_IGNORE, myid, MPI_REQUEST_NULL, &
                           MPI_STATUS_IGNORE, MPI_UNDEFINED, MPI_OFFSET_KIND, MPI_MODE_RDONLY, MPI_INFO_NULL, &
-                          MPI_STATUS_SIZE
+                          MPI_STATUS_SIZE, MPI_GET_COUNT
+#ifdef MPI_F08
+    use ocean_mpi, only : MPI_STATUS
+#endif
 !    use OCEAN_mpi
 #endif
     use SCREEN_timekeeper, only : SCREEN_tk_start, SCREEN_tk_stop
@@ -1747,8 +1796,15 @@ module ocean_qe62_files
     if( ierr .ne. 0 ) return
 
     offset = 6 * 4 + 1 * 4 + 4 * 8
-    call MPI_FILE_READ_AT_ALL( fh, offset, test_gvec, 1, MPI_INTEGER, MPI_STATUS_IGNORE, ierr )
+    call MPI_FILE_READ_AT_ALL( fh, offset, test_gvec, 1, MPI_INTEGER, stats, ierr )
     if( ierr .ne. 0 ) return
+    call MPI_GET_COUNT( stats, MPI_INTEGER, k, ierr )
+    if( ierr .ne. 0 ) return
+    if( k .ne. 1 ) then
+      write(6,*) 'Short read in qe62_read_at_kpt_mpi (header)', k, 1
+      ierr = -1
+      return
+    endif
     offset = offset + 4 * 4
 
     ! Are we expanding the wave functions here?
@@ -1770,8 +1826,15 @@ module ocean_qe62_files
     ! read 9 doubles
     offset = offset + 2 * 4 + 9 * 8
     offset = offset + 4
-    call MPI_FILE_READ_AT_ALL( fh, offset, gvecs, 3 * test_gvec, MPI_INTEGER, MPI_STATUS_IGNORE, ierr )
+    call MPI_FILE_READ_AT_ALL( fh, offset, gvecs, 3 * test_gvec, MPI_INTEGER, stats, ierr )
     if( ierr .ne. 0 ) return
+    call MPI_GET_COUNT( stats, MPI_INTEGER, k, ierr )
+    if( ierr .ne. 0 ) return
+    if( k .ne. 3 * test_gvec ) then
+      write(6,*) 'Short read in qe62_read_at_kpt_mpi (G-vectors)', k, 3 * test_gvec
+      ierr = -1
+      return
+    endif
     ! 12 = 3 * 4
     offset = offset + int( test_gvec * 12, MPI_OFFSET_KIND )
     
@@ -1792,6 +1855,12 @@ module ocean_qe62_files
           call MPI_FILE_READ_AT( fh, offset, wfns(:,i), test_gvec, MPI_DOUBLE_COMPLEX, stats, ierr )
           if( ierr .ne. 0 ) return
           call MPI_GET_COUNT( stats, MPI_DOUBLE_COMPLEX, k, ierr )
+          if( ierr .ne. 0 ) return
+          if( k .ne. test_gvec ) then
+            write(6,*) 'Short read in qe62_read_at_kpt_mpi (bands)', k, test_gvec
+            ierr = -1
+            return
+          endif
           j = j + k
           offset = offset + int( test_gvec * 16, MPI_OFFSET_KIND )
         enddo
@@ -1805,6 +1874,7 @@ module ocean_qe62_files
     enddo
 
     call MPI_FILE_CLOSE( fh, ierr )
+    if( ierr .ne. 0 ) return
     call SCREEN_tk_stop("dft-read")
     if( gammaFullStorage .and. is_gamma ) then
       j = test_gvec
@@ -1929,11 +1999,15 @@ module ocean_qe62_files
         offset = offset + 4 * 4
 #else
         open( unit=99, file=qe62_gkvFile( ikpt, ispin), form='unformatted', status='old', &
-              access='stream' )!,READONLY )
+              access='stream', iostat=ierr )!,READONLY )
+        if( ierr .ne. 0 ) return
         ! int, real(3), int, logical, real
-        allocate( iread(4), dread(4) )
-        read( 99 ) iread(:), dread(:), lread
-        read( 99 ) crap, crap, test_gvec, crap, crap, crap
+        allocate( iread(4), dread(4), STAT=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99, iostat=ierr ) iread(:), dread(:), lread
+        if( ierr .ne. 0 ) return
+        read( 99, iostat=ierr ) crap, crap, test_gvec, crap, crap, crap
+        if( ierr .ne. 0 ) return
         deallocate( iread, dread )
 #endif
       else
@@ -1974,10 +2048,13 @@ module ocean_qe62_files
         ! 12 = 3 * 4
         offset = offset + int( test_gvec * 12, MPI_OFFSET_KIND )
 #else
-        allocate( dread( 9 ) )
-        read( 99 ) crap, dread(:), crap
+        allocate( dread( 9 ), STAT=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99, iostat=ierr ) crap, dread(:), crap
+        if( ierr .ne. 0 ) return
         deallocate( dread )
-        read( 99 ) crap, gvecs( :, 1:test_gvec )! , crap
+        read( 99, iostat=ierr ) crap, gvecs( :, 1:test_gvec )! , crap
+        if( ierr .ne. 0 ) return
         ! delay reading the record end statement to reduce number of read calls
 #endif
       else
@@ -1997,12 +2074,14 @@ module ocean_qe62_files
 !      bufferSize = floor( 1073741824.0_DP /  ( real( test_gvec, DP ) * real( maxBands, DP ) ) )
       bufferSize = min( bufferSize, pool_nproc - 1 )
       bufferSize = max( bufferSize, 1 )
-      allocate( cmplx_wvfn( test_gvec, maxBands, bufferSize ) )
+      allocate( cmplx_wvfn( test_gvec, maxBands, bufferSize ), STAT=ierr )
+      if( ierr .ne. 0 ) return
 
 !      nr = pool_nproc 
       nr = bufferSize
 !      nr = 2 * pool_nproc
-      allocate( requests( 0:nr ) )
+      allocate( requests( 0:nr ), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
 #ifdef MPI
       call MPI_IBCAST( gvecs, 3*test_gvec, MPI_INTEGER, pool_root, pool_comm, requests( 0 ), ierr )
@@ -2069,10 +2148,12 @@ module ocean_qe62_files
               if( ierr .ne. 0 ) goto 111
               offset = offset + int( test_gvec * 16, MPI_OFFSET_KIND )
 #else
-              read( 99 ) crap, crap
+              read( 99, iostat=ierr ) crap, crap
+              if( ierr .ne. 0 ) goto 111
               do gb = 1, test_gvec, dblBufsize
                 jgb = min( gb + dblBufSize - 1, test_gvec )
-                read( 99 ) wfns( gb : jgb, i )
+                read( 99, iostat=ierr ) wfns( gb : jgb, i )
+                if( ierr .ne. 0 ) goto 111
               enddo
 !              read( 99 ) crap
 !              read( 99 ) crap, wfns( 1:test_gvec, i ), crap
@@ -2129,10 +2210,12 @@ module ocean_qe62_files
               if( ierr .ne. 0 ) goto 111
               offset = offset + int( test_gvec * 16, MPI_OFFSET_KIND )
 #else
-              read( 99 ) crap, crap
+              read( 99, iostat=ierr ) crap, crap
+              if( ierr .ne. 0 ) goto 111
               do gb = 1, test_gvec, dblBufsize
                 jgb = min( gb + dblBufSize - 1, test_gvec )
-                read( 99 ) cmplx_wvfn( gb : jgb, i, j )
+                read( 99, iostat=ierr ) cmplx_wvfn( gb : jgb, i, j )
+                if( ierr .ne. 0 ) goto 111
               enddo
 !              read( 99 ) crap
 !              read( 99 ) crap, cmplx_wvfn( 1:test_gvec, i, j ), crap
@@ -2175,7 +2258,8 @@ module ocean_qe62_files
 
       if( ioworkaround ) then
 #ifndef TRYMPI
-      close( 99 )
+      close( 99, iostat=ierr )
+      if( ierr .ne. 0 ) goto 111
 #endif
       else
         close( 99 )
@@ -2185,7 +2269,8 @@ module ocean_qe62_files
       nr=nr+1
     else
       nr = 2
-      allocate( requests( nr ), cmplx_wvfn(1,1,1) )
+      allocate( requests( nr ), cmplx_wvfn(1,1,1), STAT=ierr )
+      if( ierr .ne. 0 ) return
       requests(:) = MPI_REQUEST_NULL
       write(1000+myid,*) '***Receiving k-point: ', ikpt, ispin
       write(1000+myid,*) '   Ngvecs: ', ngvecs

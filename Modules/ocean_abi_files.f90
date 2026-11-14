@@ -342,13 +342,23 @@ module ocean_abi_files
 !> @param[inout] ierr
   subroutine abi_read_energies_single( energies, ierr )
 #ifdef MPI
-    use ocean_mpi, only : MPI_DOUBLE_PRECISION, myid, comm, root, MPI_STATUS_IGNORE
+    use ocean_mpi, only : MPI_DOUBLE_PRECISION, myid, comm, root, MPI_STATUS_SIZE, MPI_GET_COUNT
+#ifdef MPI_F08
+    use ocean_mpi, only : MPI_STATUS
+#endif
 #endif
     real( DP ), intent(out) :: energies(:,:,:)
     integer, intent( inout ) :: ierr
 
-    integer :: nbands
+    integer :: nbands, nread
     integer :: ispin, ikpt, j
+#ifdef MPI
+#ifdef MPI_F08
+    type( MPI_STATUS ) :: stats
+#else
+    integer :: stats( MPI_STATUS_SIZE )
+#endif
+#endif
 
     if( is_split ) then
       ierr = 94241
@@ -362,8 +372,15 @@ module ocean_abi_files
         do ikpt = 1, nkpt
           call MPI_FILE_READ_AT( WFK_FH, eigenOffsets( ikpt, ispin, 1 ), &
                                  energies(:,ikpt,ispin), nbands, MPI_DOUBLE_PRECISION, &
-                                 MPI_STATUS_IGNORE, ierr )
+                                 stats, ierr )
           if( ierr .ne. 0 ) return
+          call MPI_GET_COUNT( stats, MPI_DOUBLE_PRECISION, nread, ierr )
+          if( ierr .ne. 0 ) return
+          if( nread .ne. nbands ) then
+            write(6,*) 'Short read in abi_read_energies_single', nread, nbands
+            ierr = -1
+            return
+          endif
         enddo
       enddo
 
@@ -450,7 +467,10 @@ module ocean_abi_files
   subroutine abi_read_at_kpt( ikpt, ispin, ngvecs, my_bands, gvecs, wfns, ierr )
 #ifdef MPI
     use OCEAN_mpi, only : MPI_INTEGER, MPI_DOUBLE_COMPLEX, MPI_STATUS_IGNORE, MPI_OFFSET_KIND, &
-                          myid
+                          myid, MPI_STATUS_SIZE, MPI_GET_COUNT
+#ifdef MPI_F08
+    use ocean_mpi, only : MPI_STATUS
+#endif
 #endif
     use ai_kinds, only : sizeDoubleComplex, sizeRecord
     integer, intent( in ) :: ikpt, ispin, ngvecs, my_bands
@@ -460,8 +480,13 @@ module ocean_abi_files
     !
 #ifdef MPI
     integer( MPI_OFFSET_KIND ) :: offset
+#ifdef MPI_F08
+    type( MPI_STATUS ) :: stats
+#else
+    integer :: stats( MPI_STATUS_SIZE )
 #endif
-    integer :: iShift, id, nbands, ib
+#endif
+    integer :: iShift, id, nbands, ib, nread
 
 #ifndef MPI
     ierr = -10
@@ -476,9 +501,18 @@ module ocean_abi_files
     if( pool_myid .eq. pool_root ) then
       write(1000+myid,*) '***Reading gvectors', offset
       flush(1000+myid)
-      call MPI_FILE_READ_AT( WFK_FH, offset, gvecs, 3*ngvecs, MPI_INTEGER, MPI_STATUS_IGNORE, ierr )
+      call MPI_FILE_READ_AT( WFK_FH, offset, gvecs, 3*ngvecs, MPI_INTEGER, stats, ierr )
+      if( ierr .ne. 0 ) return
+      call MPI_GET_COUNT( stats, MPI_INTEGER, nread, ierr )
+      if( ierr .ne. 0 ) return
+      if( nread .ne. 3*ngvecs ) then
+        write(6,*) 'Short read in abi_read_at_kpt (G-vectors)', nread, 3*ngvecs
+        ierr = -1
+        return
+      endif
     endif
     call MPI_BCAST( gvecs, 3*ngvecs, MPI_INTEGER, pool_root, pool_comm, ierr )
+    if( ierr .ne. 0 ) return
 
     ! next have every processor read in their bands
     offset = wvfOffsets( ikpt, ispin, iShift )
@@ -499,7 +533,15 @@ module ocean_abi_files
     flush(1000+myid)
     do ib = 1, my_bands
       call MPI_FILE_READ_AT( WFK_FH, offset, wfns(:,ib), ngvecs, MPI_DOUBLE_COMPLEX, &
-                             MPI_STATUS_IGNORE, ierr )
+                             stats, ierr )
+      if( ierr .ne. 0 ) return
+      call MPI_GET_COUNT( stats, MPI_DOUBLE_COMPLEX, nread, ierr )
+      if( ierr .ne. 0 ) return
+      if( nread .ne. ngvecs ) then
+        write(6,*) 'Short read in abi_read_at_kpt (bands)', nread, ngvecs
+        ierr = -1
+        return
+      endif
       offset = offset + int( ngvecs, MPI_OFFSET_KIND ) * int( sizeDoubleComplex, MPI_OFFSET_KIND ) &
              + int( sizeRecord*2, MPI_OFFSET_KIND )
     enddo
@@ -719,11 +761,14 @@ module ocean_abi_files
       do i = 1, nSplit
         call get_fileName( filnam, isSplit )
 !        write(6,*) filnam
-        open( unit=99, file=filnam, form='unformatted', status='old' )
+        open( unit=99, file=filnam, form='unformatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
 
         call parseHeader( 99, pos, i, ierr )
+        if( ierr .ne. 0 ) return
 
-        close( 99 )
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         isSplit = .true.
       enddo
 
@@ -749,11 +794,11 @@ module ocean_abi_files
     ! Error sync
 !111 continue
     call MPI_BCAST( ierr, 1, MPI_INTEGER, inter_root, inter_comm, ierr_ )
-    if( ierr .ne. 0 ) return
     if( ierr_ .ne. 0 ) then
       ierr = ierr_
       return
     endif
+    if( ierr .ne. 0 ) return
 
     call share_init( ierr )
     if( ierr .ne. 0 ) return
@@ -908,10 +953,12 @@ module ocean_abi_files
     ! Before version 9, the codvsn was only 6 characters
     ! we can attempt the read a second time
     if( io_err .ne. 0 ) then
-      backspace( iun )
+      backspace( iun, iostat=ierr )
+      if( ierr .ne. 0 ) return
       write( codvsn, '(A)' ) ''
       write(6,*) '   Pre ABINIT 9 detected'
-      read( iun ) codvsn(1:6), headform, fform
+      read( iun, iostat=ierr ) codvsn(1:6), headform, fform
+      if( ierr .ne. 0 ) return
       pos = pos - 2 * sizeChar
     endif
 
@@ -925,8 +972,10 @@ module ocean_abi_files
 !    endif
 
 
-    allocate( i1( 18 ), d1( 7 ), i2( 1 ), d2( 12 ), i3( 4 ) )
-    read( iun ) i1, d1, d2, i3
+    allocate( i1( 18 ), d1( 7 ), i2( 1 ), d2( 12 ), i3( 4 ), STAT=ierr )
+    if( ierr .ne. 0 ) return
+    read( iun, iostat=ierr ) i1, d1, d2, i3
+    if( ierr .ne. 0 ) return
 !bantot, date, intxc, ixc, natom, ngfft(1:3), &
 !& nkpt, nspden, nspinor, nsppol, nsym, npsp, ntypat, occopt, pertcase,&
 !& usepaw, ecut, ecutdg, ecutsm, ecut_eff, qptn, rprimd, &
@@ -979,8 +1028,10 @@ module ocean_abi_files
 
     if( is_shift .and. .not. is_split ) then
       write(6,*) 'Is shift, not split'
-      allocate( wavefunctionStorageByK( nkpt*2 ), tempBandsByK(nkpt*2,nspin), tempPlanewavesByK(nkpt*2) )
-      read( iun ) wavefunctionStorageByK(:), tempBandsByK(:,:), tempPlanewavesByK(:) 
+      allocate( wavefunctionStorageByK( nkpt*2 ), tempBandsByK(nkpt*2,nspin), tempPlanewavesByK(nkpt*2), STAT=ierr )
+      if( ierr .ne. 0 ) return
+      read( iun, iostat=ierr ) wavefunctionStorageByK(:), tempBandsByK(:,:), tempPlanewavesByK(:)
+      if( ierr .ne. 0 ) return
       do i = 1, nspin
         do k = 1, nkpt
           bandsByK(k,i,1) = tempBandsByK((1+(k-1)*2),i) 
@@ -994,8 +1045,10 @@ module ocean_abi_files
       deallocate( tempBandsByK, tempPlanewavesByK )
       
     else
-      allocate( wavefunctionStorageByK( nkpt ) ) 
-      read( iun ) wavefunctionStorageByK(:), bandsByK(:,:,ia), planewavesByK(:,ia)
+      allocate( wavefunctionStorageByK( nkpt ), STAT=ierr )
+      if( ierr .ne. 0 ) return
+      read( iun, iostat=ierr ) wavefunctionStorageByK(:), bandsByK(:,:,ia), planewavesByK(:,ia)
+      if( ierr .ne. 0 ) return
     endif
     deallocate( wavefunctionStorageByK )
 !    write(6,*) i1(1:2)
@@ -1020,8 +1073,10 @@ module ocean_abi_files
     pos = pos + sizeRecord
 
     deallocate( d1, d2 )
-    allocate( d1( 1 + 3 * natoms ), d2( 2 ) )
-    read( iun ) d1, d2
+    allocate( d1( 1 + 3 * natoms ), d2( 2 ), STAT=ierr )
+    if( ierr .ne. 0 ) return
+    read( iun, iostat=ierr ) d1, d2
+    if( ierr .ne. 0 ) return
     write(6,*) 'ETOT: ', d2(1)
     write(6,*) 'EF  : ', d2(2)
   
@@ -1039,7 +1094,8 @@ module ocean_abi_files
     ! shiftk = 3 * nshiftk real
     pos = pos + 2 * sizeRecord + 21 * sizeInt + 2 * sizeDouble + 6 * numkshifts * sizeDouble
 
-    read( iun )
+    read( iun, iostat=ierr )
+    if( ierr .ne. 0 ) return
 
 
 !    &   hdr%title(ipsp), hdr%znuclpsp(ipsp), hdr%zionpsp(ipsp), hdr%pspso(ipsp), hdr%pspdat(ipsp), &
@@ -1056,7 +1112,8 @@ module ocean_abi_files
     ! 132 from title and 32 from MD5
     do i = 1, numPsps
       pos = pos + 2 * sizeRecord + 164 * sizeChar + 5 * sizeInt + 2 * sizeDouble
-      read( iun ) title
+      read( iun, iostat=ierr ) title
+      if( ierr .ne. 0 ) return
       write(6,*) title
     enddo
 
@@ -1099,31 +1156,46 @@ module ocean_abi_files
       prefix = 'RUN0001'
       prefixSplit = 'RUN0002'
 
-      open(unit=99,file='brange.ipt', form='formatted', status='old' )
-      read(99,*) brange(:)
-      close(99)
+      open(unit=99,file='brange.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) brange(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='bands.ipt', exist=ex )
       if( ex ) then
-        open(unit=99,file='bands.ipt', form='formatted', status='old' )
-        read(99,*) bands(:)
-        close(99)
+        open(unit=99,file='bands.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read(99,*, iostat=ierr ) bands(:)
+        if( ierr .ne. 0 ) return
+        close(99, iostat=ierr )
+        if( ierr .ne. 0 ) return
       else
         bands(2) = brange(4)
         bands(1) = brange(1)
       endif
-      open(unit=99,file='kmesh.ipt', form='formatted', status='old' )
-      read(99,*) kpts(:)
-      close(99)
-      open(unit=99,file='nspin', form='formatted', status='old' )
-      read(99,*) nspin
-      close(99)
+      open(unit=99,file='kmesh.ipt', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) kpts(:)
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
+      open(unit=99,file='nspin', form='formatted', status='old', iostat=ierr )
+      if( ierr .ne. 0 ) return
+      read(99,*, iostat=ierr ) nspin
+      if( ierr .ne. 0 ) return
+      close(99, iostat=ierr )
+      if( ierr .ne. 0 ) return
 
       inquire( file='qinunitsofbvectors.ipt', exist=ex )
       if( ex ) then
-        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old')
-        read( 99 , * ) qinb(:)
-        close( 99 )
+        open( unit=99, file='qinunitsofbvectors.ipt', form='formatted', status='old', iostat=ierr )
+        if( ierr .ne. 0 ) return
+        read( 99 , *, iostat=ierr ) qinb(:)
+        if( ierr .ne. 0 ) return
+        close( 99, iostat=ierr )
+        if( ierr .ne. 0 ) return
         if( abs( qinb(1) ) + abs( qinb(2) ) + abs( qinb(3) ) > tol ) is_shift = .true.
       else
         is_shift = .false.
@@ -1134,9 +1206,12 @@ module ocean_abi_files
       if( is_shift ) then
         inquire( file='dft.split', exist=ex )
         if( ex ) then
-          open( unit=99, file='dft.split', form='formatted', status='old')
-          read( 99, * ) is_split
-          close( 99 )
+          open( unit=99, file='dft.split', form='formatted', status='old', iostat=ierr )
+          if( ierr .ne. 0 ) return
+          read( 99, *, iostat=ierr ) is_split
+          if( ierr .ne. 0 ) return
+          close( 99, iostat=ierr )
+          if( ierr .ne. 0 ) return
         endif
       endif
     endif
