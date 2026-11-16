@@ -92,14 +92,22 @@ module SCREEN_timekeeper
 
   end subroutine id2string
 
-  subroutine SCREEN_tk_init
+  subroutine SCREEN_tk_init( ierr )
     implicit none
+    integer, optional, intent( out ) :: ierr
+    integer :: ierr_
     integer(8) :: cl
     call SYSTEM_CLOCK( cl, count_rate, max_count )
 
     maxdivs = 128
     ndivs = 0
-    allocate( tk_label( maxdivs ), total( maxdivs ), prev( maxdivs ) )
+    allocate( tk_label( maxdivs ), total( maxdivs ), prev( maxdivs ), STAT=ierr_ )
+    if( present( ierr ) ) ierr = ierr_
+    if( ierr_ .ne. 0 ) then
+      write(6,*) 'ERROR: SCREEN_tk_init', ierr_
+      if( .not. present( ierr ) ) stop 1
+      return
+    endif
 
     total( : ) = 0
   end subroutine SCREEN_tk_init
@@ -153,7 +161,7 @@ module SCREEN_timekeeper
   end subroutine SCREEN_tk_stop_id
 
 
-  subroutine SCREEN_tk_printtimes( myid, comm )
+  subroutine SCREEN_tk_printtimes( myid, comm, ierr )
 #ifdef MPI
 #ifndef __OLD_MPI
 
@@ -178,9 +186,10 @@ module SCREEN_timekeeper
 #else
     integer, optional, intent(in) :: comm
 #endif
+    integer, optional, intent( out ) :: ierr
 
     character(LEN=16) :: filnam
-    integer :: iter, nproc, ierr, i, j, nReport, maxReport
+    integer :: iter, nproc, ierr_, ierr_abort, i, j, nReport, maxReport
     integer(8) :: iavg, imax, imin
     real(DP) :: avg, stddev
     integer, allocatable :: rankCount(:)
@@ -192,21 +201,25 @@ module SCREEN_timekeeper
     integer :: stat(MPI_STATUS_SIZE)
 #endif
 
+    if( present( ierr ) ) ierr = 0
+
 !   This can be changed if for some reason we run on all the computers
     if( myid .gt. 999999 ) return 
 
     ! New behavior
     nproc = 1
     if( present( comm ) ) then
-      call MPI_COMM_SIZE( comm, nproc, ierr )
-      if( ierr .ne. 0) return
+      call MPI_COMM_SIZE( comm, nproc, ierr_ )
+      if( ierr_ .ne. 0 ) goto 111
     endif
 
     if( nproc .gt. 1 ) then
 
       if( myid .eq. 0 ) then
-        allocate( rankCount(0:nproc-1) )
-        allocate( allTotal( maxdivs, 0:nproc-1 ), allLabel( maxdivs, 0:nproc-1 ) )
+        allocate( rankCount(0:nproc-1), STAT=ierr_ )
+        if( ierr_ .ne. 0 ) goto 111
+        allocate( allTotal( maxdivs, 0:nproc-1 ), allLabel( maxdivs, 0:nproc-1 ), STAT=ierr_ )
+        if( ierr_ .ne. 0 ) goto 111
         rankCount(:) = 0
         allTotal(:,:) = 0
         allLabel(:,:) = ''
@@ -214,25 +227,32 @@ module SCREEN_timekeeper
         allTotal(1:ndivs,0) = total(1:ndivs)
         allLabel(1:ndivs,0) = tk_label(1:ndivs)
         do iter = 1, nproc-1
-          call MPI_RECV( rankCount(iter), 1, MPI_INTEGER, iter, 1, comm, stat, ierr )
+          call MPI_RECV( rankCount(iter), 1, MPI_INTEGER, iter, 1, comm, stat, ierr_ )
+          if( ierr_ .ne. 0 ) goto 111
           if( rankCount(iter) .gt. 0 ) then
             call MPI_RECV( allLabel(1:rankCount(iter),iter), 32*rankCount(iter), &
-                           MPI_CHARACTER, iter, 2, comm, stat, ierr )
+                           MPI_CHARACTER, iter, 2, comm, stat, ierr_ )
+            if( ierr_ .ne. 0 ) goto 111
             call MPI_RECV( allTotal(1:rankCount(iter),iter), rankCount(iter), &
-                           MPI_INTEGER8, iter, 3, comm, stat, ierr )
+                           MPI_INTEGER8, iter, 3, comm, stat, ierr_ )
+            if( ierr_ .ne. 0 ) goto 111
           endif
         enddo
       else
-        call MPI_SEND( ndivs, 1, MPI_INTEGER, 0, 1, comm, ierr )
+        call MPI_SEND( ndivs, 1, MPI_INTEGER, 0, 1, comm, ierr_ )
+        if( ierr_ .ne. 0 ) goto 111
         if( ndivs .gt. 0 ) then
-          call MPI_SEND( tk_label(1:ndivs), 32*ndivs, MPI_CHARACTER, 0, 2, comm, ierr )
-          call MPI_SEND( total(1:ndivs), ndivs, MPI_INTEGER8, 0, 3, comm, ierr )
+          call MPI_SEND( tk_label(1:ndivs), 32*ndivs, MPI_CHARACTER, 0, 2, comm, ierr_ )
+          if( ierr_ .ne. 0 ) goto 111
+          call MPI_SEND( total(1:ndivs), ndivs, MPI_INTEGER8, 0, 3, comm, ierr_ )
+          if( ierr_ .ne. 0 ) goto 111
         endif
       endif
 
       if( myid .eq. 0 ) then
         maxReport = sum( rankCount(:) )
-        allocate( reportLabel( maxReport ), rankTotal( 0:nproc-1 ) )
+        allocate( reportLabel( maxReport ), rankTotal( 0:nproc-1 ), STAT=ierr_ )
+        if( ierr_ .ne. 0 ) goto 111
         nReport = 0
         do i = 1, rankCount(0)
           nReport = nReport + 1
@@ -251,11 +271,14 @@ module SCREEN_timekeeper
         enddo
 
         write(filnam,'(A6,I6.6,A4)' ) 'timing', myid, '.txt'
-        open(unit=99,file=filnam,form='formatted',status='unknown')
-        rewind(99)
+        open(unit=99,file=filnam,form='formatted',status='unknown',IOSTAT=ierr_)
+        if( ierr_ .ne. 0 ) goto 111
+        rewind(99,IOSTAT=ierr_)
+        if( ierr_ .ne. 0 ) goto 111
 
         ! 32 + 1 + 20 + 1 + 5
-        write(99,'(A1,A69,A,A22,A17,A17,A17,A17)') '#', '', 'Root', 'Avg', 'StdDev', 'Min', 'Max'
+        write(99,'(A1,A69,A,A22,A17,A17,A17,A17)',IOSTAT=ierr_) '#', '', 'Root', 'Avg', 'StdDev', 'Min', 'Max'
+        if( ierr_ .ne. 0 ) goto 111
         do iter = 1, nReport
           ! Missing labels contribute zero ticks for that rank.
           rankTotal(:) = 0
@@ -277,29 +300,47 @@ module SCREEN_timekeeper
           enddo
           stddev = sqrt( stddev/dble(nproc) )
           ! 10 digits before the decimal should get us 10 years in seconds
-          write( 99, '(A,1X,I20,1X,A5,F16.6,1X,A5,1X,F16.6,1X,F16.6,1X,F16.6,1X,F16.6)' ) &
+          write( 99, '(A,1X,I20,1X,A5,F16.6,1X,A5,1X,F16.6,1X,F16.6,1X,F16.6,1X,F16.6)', IOSTAT=ierr_ ) &
                   reportLabel( iter ), rankTotal(0), ' tics', &
                   (dble( rankTotal(0) )/dble(count_rate)), 'secs', &
                   avg/dble(count_rate), stddev/dble(count_rate), &
                   dble(imin)/dble(count_rate), dble(imax)/dble(count_rate)
+          if( ierr_ .ne. 0 ) goto 111
         enddo
-        close(99)
+        close(99,IOSTAT=ierr_)
+        if( ierr_ .ne. 0 ) goto 111
 
         deallocate( rankCount, allTotal, allLabel, reportLabel, rankTotal )
       endif
 
     else
       write(filnam,'(A6,I6.6,A4)' ) 'timing', myid, '.txt'
-      open(unit=100+myid,file=filnam,form='formatted',status='unknown')
-      rewind(100+myid)
+      open(unit=100+myid,file=filnam,form='formatted',status='unknown',IOSTAT=ierr_)
+      if( ierr_ .ne. 0 ) goto 111
+      rewind(100+myid,IOSTAT=ierr_)
+      if( ierr_ .ne. 0 ) goto 111
 
       do iter = 1, ndivs
-        write(100+myid,'(A,1X,I20,1X,A,F24.6,1X,A)') tk_label( iter ), total( iter ), ' tics', &
+        write(100+myid,'(A,1X,I20,1X,A,F24.6,1X,A)',IOSTAT=ierr_) tk_label( iter ), total( iter ), ' tics', &
                   (dble( total( iter ) )/dble(count_rate)), 'secs'
+        if( ierr_ .ne. 0 ) goto 111
       enddo
 
-      close(100+myid)
+      close(100+myid,IOSTAT=ierr_)
+      if( ierr_ .ne. 0 ) goto 111
     endif
+    return
+
+111 continue
+    write(6,*) 'ERROR: SCREEN_tk_printtimes', ierr_
+    if( present( ierr ) ) then
+      ierr = ierr_
+      return
+    endif
+#ifdef MPI
+    if( present( comm ) ) call MPI_ABORT( comm, ierr_, ierr_abort )
+#endif
+    stop 1
 
   end subroutine SCREEN_tk_printtimes
 

@@ -162,7 +162,7 @@ module ocean_cks
 
     if( ispin .eq. 2 ) ikpt = ikpt + product( params%kmesh )
 
-    offKpt = ikpt - 1
+    offKpt = max( ikpt - 1, 0 )
     write( 1000+myid, * ) ikpt, ispin, offKpt
       
     nuni = ceiling( real( params%nspin * params%nkpts, DP ) / real( nPool, DP ) )
@@ -192,7 +192,11 @@ module ocean_cks
       vband = size( allCksHolders( isite )%val, 2 )
       myk = size( allCksHolders( isite )%con, 3 )
       ! Do not write padded holder slots beyond the last k/spin task.
-      myk = min( myk, ( params%nspin * params%nkpts - int(offKpt) + nPool - 1 ) / nPool )
+      if( ikpt .eq. 0 ) then
+        myk = 0
+      else
+        myk = min( myk, ( params%nspin * params%nkpts - int(offKpt) + nPool - 1 ) / nPool )
+      endif
       write( filnam, '(A8,A2,I4.4)' ) 'parcksc.', allSites( isite )%elname, allSites( isite )%indx
 
       call MPI_FILE_OPEN( comm, filnam, fflags, MPI_INFO_NULL, fh, ierr )

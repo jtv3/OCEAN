@@ -384,12 +384,12 @@ module ocean_abi_files
         enddo
       enddo
 
-      open(unit=99, file='enkfile.test', form='formatted' )
-      do ikpt = 1, nkpt
-        write(99,*) (2*energies(j,ikpt,1),j=brange(1),brange(2))
-        write(99,*) (2*energies(j,ikpt,1),j=brange(3),brange(4))
-      enddo
-      close(99)
+!      open(unit=99, file='enkfile.test', form='formatted' )
+!      do ikpt = 1, nkpt
+!        write(99,*) (2*energies(j,ikpt,1),j=brange(1),brange(2))
+!        write(99,*) (2*energies(j,ikpt,1),j=brange(3),brange(4))
+!      enddo
+!      close(99)
     endif
 
     call MPI_BCAST( energies, size( energies ), MPI_DOUBLE_PRECISION, root, comm, ierr )
