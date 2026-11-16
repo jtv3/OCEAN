@@ -35,7 +35,7 @@ program screen_driver
 
 !  integer, allocatable :: tmp_znl( :, : )
 
-  integer :: ierr
+  integer :: ierr, timing_ierr
   integer :: nsites
   integer :: natoms
 !  integer :: znlLength
@@ -45,12 +45,18 @@ program screen_driver
 
   ierr = 0
 
-  call screen_tk_init()
-  call screen_tk_start( "screen" )
-
-  call screen_tk_start( "init" )
+  call screen_tk_init( timing_ierr )
+  if( timing_ierr .eq. 0 ) then
+    call screen_tk_start( "screen" )
+    call screen_tk_start( "init" )
+  endif
   call ocean_mpi_init( ierr )
   if( ierr .ne. 0 ) goto 111
+  ! Defer timer allocation errors until MPI is available to abort the job.
+  if( timing_ierr .ne. 0 ) then
+    ierr = timing_ierr
+    goto 111
+  endif
 
   call screen_system_load( ierr )
   if( ierr .ne. 0 ) goto 111
@@ -152,8 +158,8 @@ program screen_driver
 111 continue
 !  if( ierr .ne. 0 ) call MPI_ABORT( comm, ierr, ierr_ )
 
-  call screen_tk_stop( "screen" )
-  if( ierr .eq. 0 ) call screen_tk_printtimes( myid, comm )
+  if( timing_ierr .eq. 0 ) call screen_tk_stop( "screen" )
+  if( ierr .eq. 0 ) call screen_tk_printtimes( myid, comm, ierr )
   call ocean_mpi_finalize( ierr )
   if( myid .eq. 0 ) write(6,*) '*** Screening is done ***'
 

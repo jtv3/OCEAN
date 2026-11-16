@@ -8,6 +8,7 @@
 ! by John Vinson 03-2017
 module screen_grid
   use AI_kinds, only : DP
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
 
   implicit none
   private
@@ -189,6 +190,11 @@ module screen_grid
       read( 99, *, IOSTAT=ierr ) g%rmax, g%ninter
       if( ierr .ne. 0 ) goto 10
 
+      if( .not. ieee_is_finite( g%rmax ) ) then
+        write( 6, * ) 'Rmax must be finite', g%rmax
+        ierr = 105317
+        goto 111
+      endif
       if( g%rmax .le. 0 ) then
         write( 6, * ) 'Rmax must be positive', g%rmax
         ierr = 105317
@@ -304,6 +310,11 @@ module screen_grid
         if( ierr .ne. 0 ) return
         read( 99, *, iostat=ierr ) g%rmax
         if( ierr .ne. 0 ) return
+        if( .not. ieee_is_finite( g%rmax ) ) then
+          write( 6, * ) 'Atomic Rmax must be finite', z, g%rmax
+          ierr = -1
+          return
+        endif
         close( 99, iostat=ierr )
         if( ierr .ne. 0 ) return
       endif
@@ -549,15 +560,35 @@ module screen_grid
       do i = 1, ag%nang
         read( 99, *, iostat=ierr ) ag%angles( :, i ), ag%weights( i )
         if( ierr .ne. 0 ) goto 10
+        if( .not. all( ieee_is_finite( ag%angles( :, i ) ) ) ) goto 12
+        if( .not. ieee_is_finite( ag%weights( i ) ) ) goto 12
         su = su + ag%weights( i )
         tmp = dot_product( ag%angles( :, i ), ag%angles( :, i ) )
+        if( .not. ieee_is_finite( tmp ) ) goto 12
+        if( tmp .le. 0.0_DP ) goto 12
         tmp = 1.0_DP / dsqrt( tmp )
         ag%angles( :, i ) = ag%angles( :, i ) * tmp
       enddo
 
+      if( .not. ieee_is_finite( su ) ) goto 13
+      if( su .eq. 0.0_DP ) goto 13
+      if( abs( su ) .lt. ( 4.0_DP * PI_DP ) / huge( su ) ) goto 13
       su = 4.0_DP * PI_DP / su
+      if( .not. ieee_is_finite( su ) ) goto 13
       ag%weights( : ) = ag%weights( : ) * su
+      do i = 1, ag%nang
+        if( .not. ieee_is_finite( ag%weights( i ) ) ) goto 12
+      enddo
       close( 99, iostat=ierr )
+      goto 10
+
+12    continue
+      write( 6, * ) 'Invalid angular direction or weight:', i, ag%angles( :, i ), ag%weights( i )
+      ierr = -1
+      goto 10
+13    continue
+      write( 6, * ) 'Invalid angular weight normalization:', su
+      ierr = -1
     endif        
 
     ! Catch up on errors from above
@@ -785,10 +816,23 @@ module screen_grid
     type( radial_grid ), intent( inout ) :: rg
     integer, intent( inout ) :: ierr
     !
-    real(DP) :: halfWidth
-    integer :: ii
+    real(DP) :: halfWidth, width, nRequested
+    integer :: ii, maxPoints
 
-    rg%nr = ceiling( ( rg%rmax - rg%rmin ) / rg%dr )
+    if( .not. ieee_is_finite( rg%rmin ) ) goto 10
+    if( .not. ieee_is_finite( rg%rmax ) ) goto 10
+    if( .not. ieee_is_finite( rg%dr ) ) goto 10
+    if( rg%dr .le. 0.0_DP ) goto 10
+    width = rg%rmax - rg%rmin
+    if( .not. ieee_is_finite( width ) ) goto 10
+    if( width .le. 0.0_DP ) goto 10
+    ! Leave room for rounding an odd order up to the next even value.
+    maxPoints = huge( rg%nr ) - 1
+    if( rg%dr .lt. width / real( maxPoints, DP ) ) goto 10
+    nRequested = width / rg%dr
+    if( .not. ieee_is_finite( nRequested ) ) goto 10
+    if( nRequested .le. 0.0_DP .or. nRequested .gt. real( maxPoints, DP ) ) goto 10
+    rg%nr = ceiling( nRequested )
     if( mod( rg%nr, 2 ) .eq. 1 ) rg%nr = rg%nr + 1
 
     allocate( rg%rad( rg%nr ), rg%drad( rg%nr ), STAT=ierr )
@@ -811,6 +855,12 @@ module screen_grid
       rg%rad( ii ) = rg%rmin + halfWidth * ( 1.0_DP + rg%rad( ii ) )
       rg%drad( ii ) = rg%drad( ii ) * halfWidth
     enddo
+
+    return
+10  continue
+    if( myid .eq. root ) write( 6, * ) 'Invalid Legendre radial grid (rmin, rmax, dr):', &
+                                    rg%rmin, rg%rmax, rg%dr
+    ierr = -1
  
   end subroutine make_legendre
     
@@ -820,12 +870,25 @@ module screen_grid
     type( radial_grid ), intent( inout ) :: rg
     integer, intent( inout ) :: ierr
     !
-    real(DP) :: delta
-    integer :: ii
+    real(DP) :: delta, width, nRequested
+    integer :: ii, maxPoints
 
     ! redefine dr from requested to a possibly smaller version that divides evenly
+    if( .not. ieee_is_finite( rg%rmin ) ) goto 10
+    if( .not. ieee_is_finite( rg%rmax ) ) goto 10
+    if( .not. ieee_is_finite( rg%dr ) ) goto 10
+    if( rg%dr .le. 0.0_DP ) goto 10
+    width = rg%rmax - rg%rmin
+    if( .not. ieee_is_finite( width ) ) goto 10
+    if( width .le. 0.0_DP ) goto 10
+    ! The midpoint expressions below form 2*nr in default integer arithmetic.
+    maxPoints = huge( rg%nr ) / 2
+    if( rg%dr .lt. width / real( maxPoints, DP ) ) goto 10
+    nRequested = width / rg%dr
+    if( .not. ieee_is_finite( nRequested ) ) goto 10
+    if( nRequested .le. 0.0_DP .or. nRequested .gt. real( maxPoints, DP ) ) goto 10
     delta = rg%dr
-    rg%nr = ceiling( ( rg%rmax - rg%rmin ) / rg%dr )
+    rg%nr = ceiling( nRequested )
     rg%dr = ( rg%rmax - rg%rmin ) / real( rg%nr, DP )
 
     if( myid .eq. root ) then
@@ -841,6 +904,12 @@ module screen_grid
       rg%rad( ii ) = rg%rmin + delta * real( 2 * ii - 1, DP ) / real( 2 * rg%nr, DP )
       rg%drad( ii ) = rg%dr
     enddo
+
+    return
+10  continue
+    if( myid .eq. root ) write( 6, * ) 'Invalid uniform radial grid (rmin, rmax, dr):', &
+                                    rg%rmin, rg%rmax, rg%dr
+    ierr = -1
 
   end subroutine make_uniform
 

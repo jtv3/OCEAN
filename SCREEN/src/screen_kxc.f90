@@ -316,13 +316,30 @@ module screen_kxc
   subroutine rs_read_initialize( dims, ierr )
     integer, intent( out ) :: dims(3)
     integer, intent( inout ) :: ierr
+    integer :: i, npt
 
   ! For now
     open(unit=99,file='nfft',form='formatted', status='old', IOSTAT=ierr )
     if( ierr .ne. 0 ) return
     read(99,*,IOSTAT=ierr ) dims(:)
     if( ierr .ne. 0 ) return
+    ! Each axis must supply distinct samples for the interpolation stencil.
+    if( any( dims(:) .lt. intOrder ) ) then
+      write( 6, * ) 'Density grid requires at least', intOrder, 'points per axis'
+      goto 10
+    endif
+    ! Keep PRODUCT(dims) representable for the density broadcast.
+    npt = 1
+    do i = 1, 3
+      if( dims(i) .gt. huge( npt ) / npt ) goto 10
+      npt = npt * dims(i)
+    enddo
     close(99, IOSTAT=ierr )
+
+    return
+10  continue
+    write( 6, * ) 'Invalid density grid dimensions in nfft:', dims(:)
+    ierr = -1
 
   end subroutine rs_read_initialize
 
