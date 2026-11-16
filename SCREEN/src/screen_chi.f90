@@ -142,7 +142,7 @@ module screen_chi
     write(fmtstmt, '("(", I0, "(1x,1e15.8))")' ) size( FullW, 2 )+1
 
     write( filnam, '(A,A)' ) trim( prefix ), 'vind'
-    transpW = transpose( FullW )
+    transpW(:,:) = transpose( FullW )
     open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
     if( ierr .ne. 0 ) return
     rewind( 99, IOSTAT=ierr )
@@ -155,7 +155,7 @@ module screen_chi
     if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'vind0'
-    transpW = transpose( FullW0 )
+    transpW(:,:) = transpose( FullW0 )
     open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
     if( ierr .ne. 0 ) return
     rewind( 99, IOSTAT=ierr )
@@ -168,7 +168,7 @@ module screen_chi
     if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'nind'
-    transpW = transpose( Ninduced )
+    transpW(:,:) = transpose( Ninduced )
     open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
     if( ierr .ne. 0 ) return
     rewind( 99, IOSTAT=ierr )
@@ -181,7 +181,7 @@ module screen_chi
     if( ierr .ne. 0 ) return
 
     write( filnam, '(A,A)' ) trim( prefix ), 'nind0'
-    transpW = transpose( N0induced )
+    transpW(:,:) = transpose( N0induced )
     open(unit=99,file=filnam,form='formatted',status='unknown', IOSTAT=ierr )
     if( ierr .ne. 0 ) return
     rewind( 99, IOSTAT=ierr )

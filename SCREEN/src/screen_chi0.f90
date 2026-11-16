@@ -390,7 +390,7 @@ module screen_chi0
     i = size( chi )
     allocate( tchi( size(chi,2), size(chi,1) ), STAT=ierr )
     if( ierr .ne. 0 ) return
-    tchi = transpose( chi )
+    tchi(:,:) = transpose( chi )
 
 #ifdef MPI
 !    if( pinfo%myid .ne. pinfo%root ) then

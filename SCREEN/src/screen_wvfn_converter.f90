@@ -4540,7 +4540,7 @@ module screen_wvfn_converter
 
     integer :: xchunk, iz, iy, ix, iix, i, l, m, ip, ib, itarg, xstop, lmin, lmax, nproj
     complex(DP) :: dephase, ylm
-    complex(DP), allocatable :: delta(:,:), TD(:,:)
+    complex(DP), allocatable :: TD(:,:)
     real(DP), allocatable :: projDelta(:), prefs(:)
     real(DP) :: rad, phse,posn(3)
 
@@ -4553,7 +4553,7 @@ module screen_wvfn_converter
     if( uofx%dims(1) .lt. 1 ) return
 
 
-    allocate( delta( xchunk, nbandUse ), projDelta( size(betaMAtrix,1) ), STAT=ierr )
+    allocate( projDelta( size(betaMAtrix,1) ), STAT=ierr )
     if( ierr .ne. 0 ) return
     allocate( TD( nbandUse, xchunk ), STAT=ierr )
     if( ierr .ne. 0 ) return
@@ -4612,7 +4612,6 @@ module screen_wvfn_converter
 !                                      all_atoms( atomLookup( iix, iy, iz ) )%info%z, &
 !                         TD( 1, iix-ix+1 ), uofx%cUofX(iix,iy,iz,1)
           enddo
-          delta = transpose( TD )
           do ib = 1, nbandUse
             do iix = ix, xstop
 !              rad = real(delta( iix-ix+1, ib )*conjg(delta( iix-ix+1, ib )),DP)
@@ -4620,7 +4619,7 @@ module screen_wvfn_converter
 !                write(6,*) uofx%cUofX(iix,iy,iz,ib)
 !                write(6,*) delta( iix-ix+1, ib ), TD( ib,  iix-ix+1 )
 !              endif
-              uofx%cUofX(iix,iy,iz,ib) = uofx%cUofX(iix,iy,iz,ib) + delta( iix-ix+1, ib ) 
+              uofx%cUofX(iix,iy,iz,ib) = uofx%cUofX(iix,iy,iz,ib) + TD( ib, iix-ix+1 )
 !              if( rad .gt. 0.01_DP ) then
 !                write(6,*) uofx%cUofX(iix,iy,iz,ib), iix, iy, iz, ib
 !              endif
@@ -4647,7 +4646,7 @@ module screen_wvfn_converter
     enddo
 #endif
 
-    deallocate( delta, projDelta )
+    deallocate( projDelta )
 
   end subroutine swl_AugUofX
 
