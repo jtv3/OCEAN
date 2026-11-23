@@ -212,6 +212,7 @@ module OCEAN_psi
 
 
 #ifdef FALSE
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_start_sum( p, ierr )
     implicit none
     !
@@ -358,6 +359,7 @@ module OCEAN_psi
 !
 !> @brief Primarily a programming correctness test. Advances/tests the status 
 !! of the buffer communications for the sends
+!> Currently unused 12 Nov 2026
   subroutine buffer_send_test( p, active, ierr )
 #ifdef MPI
 !    use mpi, only : MPI_TESTANY, MPI_UNDEFINED, MPI_REQUEST_NULL
@@ -875,6 +877,7 @@ module OCEAN_psi
 !> @author John Vinson, NIST
 !
 !> @brief Uses explicit OMP threads to transfer from buffer to min
+!> Currently unused 12 Nov 2026
   subroutine buffer2min_thread( p, ierr )
     use OCEAN_mpi, only : myid, MPI_STATUS_IGNORE, MPI_UNDEFINED, MPI_SUCCESS
     implicit none
@@ -1295,6 +1298,7 @@ module OCEAN_psi
   end subroutine buffer_buffer2min
 
 #if( 0 ) 
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_write2store( p, ierr )
     implicit none
     type(OCEAN_vector), intent( inout ) :: p
@@ -2140,6 +2144,7 @@ module OCEAN_psi
   
 !!AK - this computes p dot q and stores it in q, it operates only over the min
 !of core and valence separately. 
+!> Currently unused 12 Nov 2026
 subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, ival, dest )
 !    use mpi
     use OCEAN_mpi!, only : root, myid
@@ -2667,6 +2672,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
   end subroutine OCEAN_psi_zero_full
 
 !> @brief pass in real arrays to store them into part of the ocean_vector
+!> Currently unused 12 Nov 2026
   subroutine OCEAN_psi_set_full( p, ierr, re_core, im_core, re_val, im_val )
     implicit none
     type( OCEAN_vector ), intent( inout ) :: p
@@ -2752,6 +2758,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 !
 !> @details Currently only enabled for valence ocean_vector and assumes that 
 !! the vector E is strictly real. \todo Enable complex E vector. Core-level?
+!> Currently unused 12 Nov 2026
   subroutine OCEAN_psi_cmult( a, b, e, have_gw )
     implicit none
     type( OCEAN_vector ), intent( in ) :: a, e
@@ -2791,6 +2798,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #ifdef FALSE
+! Currently unused 12 Nov 2026
   real(dp) function OCEAN_psi_nrm_old( a )
     implicit none
     type( OCEAN_vector ), intent( in ) :: a
@@ -2806,6 +2814,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
   end function OCEAN_psi_nrm_old
 
+! Currently unused 12 Nov 2026
   complex(dp) function OCEAN_psi_dot_old( a, b )
     implicit none
     type( OCEAN_vector ), intent( in ) :: a, b
@@ -2827,6 +2836,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
   end function OCEAN_psi_dot_old
 
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_scal_old( a, x )
     implicit none
     real(dp), intent( in ) :: a
@@ -2841,6 +2851,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
   end subroutine OCEAN_psi_scal_old
 
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_axpy_old( a, x, y )
     implicit none
     real(dp), intent( in ) :: a
@@ -2856,6 +2867,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
   end subroutine OCEAN_psi_axpy_old
   
 
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_set_prec( energy, gprc, psi_in, psi_out )
     implicit none
     real( DP ), intent( in ) :: energy, gprc
@@ -2945,9 +2957,9 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
           if( present( prev_energy ) ) then
             if( abs(energy - prev_energy )/gprc .lt. 0.0001_DP ) then
               ctemp = 1.0_DP / ( prev_energy - cmplx( psi_in%min_r( j, i ), psi_in%min_i( j, i ) - gprc, DP ) )
-              ctemp2 = 1.0_DP + ( energy - prev_energy ) * ctemp 
-              ctemp2 = 1.0_DP + ( energy - prev_energy ) * ctemp * ctemp2
-              ctemp2 = 1.0_DP + ( energy - prev_energy ) * ctemp * ctemp2
+              ctemp2 = 1.0_DP - ( energy - prev_energy ) * ctemp
+              ctemp2 = 1.0_DP - ( energy - prev_energy ) * ctemp * ctemp2
+              ctemp2 = 1.0_DP - ( energy - prev_energy ) * ctemp * ctemp2
             else
               ctemp2 = ( prev_energy - cmplx( psi_in%min_r( j, i ), psi_in%min_i( j, i ) - gprc, DP ) ) &
                      / ( energy - cmplx( psi_in%min_r( j, i ), psi_in%min_i( j, i ) - gprc, DP ) )
@@ -3422,6 +3434,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
     logical :: do_conjugate
     logical :: do_full
     logical :: do_imag_as_real
+    logical :: do_alpha
     !
     if( present( is_real_only ) ) then
       do_real_only = is_real_only
@@ -3463,14 +3476,18 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
       return
     endif
 
+    ! Only read the previous z when alpha is nonzero.
+    do_alpha = .false.
     if( present( alpha ) ) then
-      if ( alpha .gt. epsilon( alpha ) )  then  ! z = x*y + a * z
+      do_alpha = abs( alpha ) .gt. epsilon( alpha )
+    endif
+
+    if( do_alpha ) then
       ! check z is valid
-        if( IAND( z%valid_store, PSI_STORE_MIN ) .eq. 0 .and. &
-            IAND( z%valid_store, PSI_STORE_FULL ) .eq. 0 ) then
-          ierr = -1
-          return
-        endif
+      if( IAND( z%valid_store, PSI_STORE_MIN ) .eq. 0 .and. &
+          IAND( z%valid_store, PSI_STORE_FULL ) .eq. 0 ) then
+        ierr = -1
+        return
       endif
     endif
 
@@ -3484,53 +3501,56 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
         if( ierr .ne. 0 ) return
       endif 
 
+      if( do_alpha .and. IAND( z%valid_store, PSI_STORE_FULL ) .eq. 0 ) then
+        call OCEAN_psi_min2full( z, ierr )
+        if( ierr .ne. 0 ) return
+      endif
+
       if( IAND( z%alloc_store, PSI_STORE_FULL ) .eq. 0 ) then
         call OCEAN_psi_alloc_full( z, ierr )
         if( ierr .ne. 0 ) return
       endif
 
-      if( present( alpha ) ) then
-        if ( alpha .gt. epsilon( alpha ) ) then
-          if( do_real_only ) then
-            if( have_core ) then
-              z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) + alpha * z%r(:,:,:) 
-              z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) + alpha * z%i(:,:,:) 
-            endif
-            if( have_val ) then
-              z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
-              z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
-            endif
-          elseif( do_imag_as_real ) then
-            if( have_core ) then
-              z%r(:,:,:) = y%r(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
-              z%i(:,:,:) = y%i(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
-            endif
-            if( have_val ) then
-              z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
-              z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
-            endif
-          elseif( do_conjugate ) then
-            if( have_core ) then
-              z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) + y%i(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
-              z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) - y%r(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
-            endif
-            if( have_val ) then
-              z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + &
-                                  y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
-              z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) - &
-                                  y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
-            endif
-          else
-            if( have_core ) then
-              z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) - y%i(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
-              z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) + y%r(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
-            endif
-            if( have_val ) then
-              z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) - &
-                                  y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
-              z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) + &
-                                  y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
-            endif
+      if( do_alpha ) then
+        if( do_real_only ) then
+          if( have_core ) then
+            z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) + alpha * z%r(:,:,:)
+            z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) + alpha * z%i(:,:,:)
+          endif
+          if( have_val ) then
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
+            z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
+          endif
+        elseif( do_imag_as_real ) then
+          if( have_core ) then
+            z%r(:,:,:) = y%r(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
+            z%i(:,:,:) = y%i(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
+          endif
+          if( have_val ) then
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
+            z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
+          endif
+        elseif( do_conjugate ) then
+          if( have_core ) then
+            z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) + y%i(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
+            z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) - y%r(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
+          endif
+          if( have_val ) then
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) + &
+                                y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
+            z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) - &
+                                y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
+          endif
+        else
+          if( have_core ) then
+            z%r(:,:,:) = y%r(:,:,:) * x%r(:,:,:) - y%i(:,:,:) * x%i(:,:,:) + alpha * z%r(:,:,:)
+            z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) + y%r(:,:,:) * x%i(:,:,:) + alpha * z%i(:,:,:)
+          endif
+          if( have_val ) then
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) - &
+                                y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%valr(:,:,:,:,:)
+            z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) + &
+                                y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + alpha * z%vali(:,:,:,:,:)
           endif
         endif
       else  ! full, no alpha
@@ -3558,7 +3578,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
             z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) - y%r(:,:,:) * x%i(:,:,:)
           endif
           if( have_val ) then
-            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) + &
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) + &
                                 y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:)
             z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) - &
                                 y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:)
@@ -3569,7 +3589,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
             z%i(:,:,:) = y%i(:,:,:) * x%r(:,:,:) + y%r(:,:,:) * x%i(:,:,:)
           endif
           if( have_val ) then
-            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:) - &
+            z%valr(:,:,:,:,:) = y%valr(:,:,:,:,:) * x%valr(:,:,:,:,:) - &
                                 y%vali(:,:,:,:,:) * x%vali(:,:,:,:,:)
             z%vali(:,:,:,:,:) = y%vali(:,:,:,:,:) * x%valr(:,:,:,:,:) + &
                                 y%valr(:,:,:,:,:) * x%vali(:,:,:,:,:)
@@ -3602,73 +3622,83 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
       endif
     endif
 
-    if( present( alpha ) ) then 
-      if ( alpha .gt. epsilon( alpha ) )  then  ! z = x*y + a * z
-        ! check z is valid
-        if( IAND( z%valid_store, PSI_STORE_MIN ) .eq. 0 ) then
-          if( IAND( z%valid_store, PSI_STORE_FULL ) .eq. 0 ) then
-            ierr = -1
-            return
-          else
-            call OCEAN_psi_full2min( z, ierr )
-            if( ierr .ne. 0 ) return
-          endif
+    if( do_alpha ) then  ! z = x*y + a * z
+      ! check z is valid
+      if( IAND( z%valid_store, PSI_STORE_MIN ) .eq. 0 ) then
+        if( IAND( z%valid_store, PSI_STORE_FULL ) .eq. 0 ) then
+          ierr = -1
+          return
+        else
+          call OCEAN_psi_full2min( z, ierr )
+          if( ierr .ne. 0 ) return
         endif
+      endif
 
-        if( have_core .and. z%core_store_size .gt. 0 ) then
+      if( have_core .and. z%core_store_size .gt. 0 ) then
 
-          if( do_conjugate ) then
-            do i = 1, z%core_store_size
-              do j = 1, psi_bands_pad
-                z%min_r( j, i ) = x%min_r( j, i ) * y%min_r( j, i ) + x%min_i( j, i ) * y%min_i( j, i ) &
-                                + alpha * z%min_r( j, i )
-                z%min_i( j, i ) = x%min_r( j, i ) * y%min_i( j, i ) - x%min_i( j, i ) * y%min_r( j, i ) &
-                                + alpha * z%min_i( j, i )
-              enddo
+        if( do_real_only ) then
+          z%min_r(:,:) = x%min_r(:,:) * y%min_r(:,:) + alpha * z%min_r(:,:)
+          z%min_i(:,:) = x%min_r(:,:) * y%min_i(:,:) + alpha * z%min_i(:,:)
+        elseif( do_imag_as_real ) then
+          z%min_r(:,:) = x%min_i(:,:) * y%min_r(:,:) + alpha * z%min_r(:,:)
+          z%min_i(:,:) = x%min_i(:,:) * y%min_i(:,:) + alpha * z%min_i(:,:)
+        elseif( do_conjugate ) then
+          do i = 1, z%core_store_size
+            do j = 1, psi_bands_pad
+              z%min_r( j, i ) = x%min_r( j, i ) * y%min_r( j, i ) + x%min_i( j, i ) * y%min_i( j, i ) &
+                              + alpha * z%min_r( j, i )
+              z%min_i( j, i ) = x%min_r( j, i ) * y%min_i( j, i ) - x%min_i( j, i ) * y%min_r( j, i ) &
+                              + alpha * z%min_i( j, i )
             enddo
+          enddo
 
-          else
+        else
 
-            do i = 1, z%core_store_size
-              do j = 1, psi_bands_pad
-                z%min_r( j, i ) = x%min_r( j, i ) * y%min_r( j, i ) - x%min_i( j, i ) * y%min_i( j, i ) &
-                                + alpha * z%min_r( j, i )
-                z%min_i( j, i ) = x%min_r( j, i ) * y%min_i( j, i ) + x%min_i( j, i ) * y%min_r( j, i ) &
-                                + alpha * z%min_i( j, i )
-              enddo
+          do i = 1, z%core_store_size
+            do j = 1, psi_bands_pad
+              z%min_r( j, i ) = x%min_r( j, i ) * y%min_r( j, i ) - x%min_i( j, i ) * y%min_i( j, i ) &
+                              + alpha * z%min_r( j, i )
+              z%min_i( j, i ) = x%min_r( j, i ) * y%min_i( j, i ) + x%min_i( j, i ) * y%min_r( j, i ) &
+                              + alpha * z%min_i( j, i )
             enddo
+          enddo
 
-          endif
         endif
+      endif
 
-        if( have_val .and. z%val_store_size .gt. 0 ) then
-          if( do_conjugate ) then
-            do ibw = 1, psi_val_bw
-              do i = 1, z%val_store_size
-                do j = 1, psi_bands_pad
-                  z%val_min_r( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
-                                           + x%val_min_i( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
-                                           + alpha * z%val_min_r( j, i, ibw )
-                  z%val_min_i( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
-                                           - x%val_min_i( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
-                                           + alpha * z%val_min_i( j, i, ibw )
-                enddo
+      if( have_val .and. z%val_store_size .gt. 0 ) then
+        if( do_real_only ) then
+          z%val_min_r(:,:,:) = x%val_min_r(:,:,:) * y%val_min_r(:,:,:) + alpha * z%val_min_r(:,:,:)
+          z%val_min_i(:,:,:) = x%val_min_r(:,:,:) * y%val_min_i(:,:,:) + alpha * z%val_min_i(:,:,:)
+        elseif( do_imag_as_real ) then
+          z%val_min_r(:,:,:) = x%val_min_i(:,:,:) * y%val_min_r(:,:,:) + alpha * z%val_min_r(:,:,:)
+          z%val_min_i(:,:,:) = x%val_min_i(:,:,:) * y%val_min_i(:,:,:) + alpha * z%val_min_i(:,:,:)
+        elseif( do_conjugate ) then
+          do ibw = 1, psi_val_bw
+            do i = 1, z%val_store_size
+              do j = 1, psi_bands_pad
+                z%val_min_r( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
+                                         + x%val_min_i( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
+                                         + alpha * z%val_min_r( j, i, ibw )
+                z%val_min_i( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
+                                         - x%val_min_i( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
+                                         + alpha * z%val_min_i( j, i, ibw )
               enddo
             enddo
-          else
-            do ibw = 1, psi_val_bw
-              do i = 1, z%val_store_size
-                do j = 1, psi_bands_pad
-                  z%val_min_r( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
-                                           - x%val_min_i( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
-                                           + alpha * z%val_min_r( j, i, ibw )
-                  z%val_min_i( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
-                                           + x%val_min_i( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
-                                           + alpha * z%val_min_i( j, i, ibw )
-                enddo
+          enddo
+        else
+          do ibw = 1, psi_val_bw
+            do i = 1, z%val_store_size
+              do j = 1, psi_bands_pad
+                z%val_min_r( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
+                                         - x%val_min_i( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
+                                         + alpha * z%val_min_r( j, i, ibw )
+                z%val_min_i( j, i, ibw ) = x%val_min_r( j, i, ibw ) * y%val_min_i( j, i, ibw ) &
+                                         + x%val_min_i( j, i, ibw ) * y%val_min_r( j, i, ibw ) &
+                                         + alpha * z%val_min_i( j, i, ibw )
               enddo
             enddo
-          endif
+          enddo
         endif
       endif
 
@@ -3682,7 +3712,13 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
       endif
 
       if( have_core .and. z%core_store_size .gt. 0 ) then
-        if( do_conjugate ) then
+        if( do_real_only ) then
+          z%min_r(:,:) = x%min_r(:,:) * y%min_r(:,:)
+          z%min_i(:,:) = x%min_r(:,:) * y%min_i(:,:)
+        elseif( do_imag_as_real ) then
+          z%min_r(:,:) = x%min_i(:,:) * y%min_r(:,:)
+          z%min_i(:,:) = x%min_i(:,:) * y%min_i(:,:)
+        elseif( do_conjugate ) then
           do i = 1, z%core_store_size
             do j = 1, psi_bands_pad
               z%min_r( j, i ) = x%min_r( j, i ) * y%min_r( j, i ) + x%min_i( j, i ) * y%min_i( j, i )
@@ -3702,7 +3738,13 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
       endif
 
       if( have_val .and. z%val_store_size .gt. 0 ) then
-        if( do_conjugate ) then
+        if( do_real_only ) then
+          z%val_min_r(:,:,:) = x%val_min_r(:,:,:) * y%val_min_r(:,:,:)
+          z%val_min_i(:,:,:) = x%val_min_r(:,:,:) * y%val_min_i(:,:,:)
+        elseif( do_imag_as_real ) then
+          z%val_min_r(:,:,:) = x%val_min_i(:,:,:) * y%val_min_r(:,:,:)
+          z%val_min_i(:,:,:) = x%val_min_i(:,:,:) * y%val_min_i(:,:,:)
+        elseif( do_conjugate ) then
           do ibw = 1, psi_val_bw
             do i = 1, z%val_store_size
               do j = 1, psi_bands_pad
@@ -3735,6 +3777,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
 
 #ifdef FALSE
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_sum_lr( sys, p, ierr ) 
 !    use mpi
     use OCEAN_system
@@ -3756,6 +3799,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 
   end subroutine OCEAN_psi_sum_lr
 
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_sum( hpsi, p, q, ierr )
     use ocean_mpi
 !    use mpi
@@ -4374,6 +4418,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
 !! a step of the GMRES algorithm we need to get back an ocean_vector. This is
 !! the inverse of OCEAN_psi_vtor. 
 !! \todo Deprecate when we fix GMRES
+!> Currently unused 12 Nov 2026
   subroutine OCEAN_psi_rtov( p, vec )
     type(OCEAN_vector), intent( inout ) :: p
     complex(DP), intent( in ) :: vec(:)
@@ -4531,7 +4576,9 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
     type(OCEAN_vector), intent( in ) :: q
     logical, intent( in ), optional :: conj
     !
-    logical :: conj_ = .false.
+    logical :: conj_
+    !
+    conj_ = .false.
     if( present( conj ) ) conj_ = conj
     !
 
@@ -4995,6 +5042,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
   ! This can be called wether or not min2full is completed or in-progress
 !> @author John Vinson, NIST
 !> @brief  Unused
+!> Currently unused 12 Nov 2026
   subroutine OCEAN_psi_assert_min2full( p, ierr )
 !    use mpi, only : MPI_TESTANY,  MPI_STATUS_IGNORE, MPI_UNDEFINED 
     use OCEAN_mpi
@@ -5351,6 +5399,7 @@ subroutine OCEAN_psi_dot_write( p, q, outvec, rrequest, rval, ierr, irequest, iv
   end subroutine OCEAN_psi_kill
 
 #if 0
+! Currently unused 12 Nov 2026
   subroutine OCEAN_psi_load_old( sys, p, ierr )
     use OCEAN_mpi 
     use OCEAN_system

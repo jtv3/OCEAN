@@ -1,10 +1,16 @@
-! Copyright (C) 2017 OCEAN collaboration
+! Copyright (C) 2017-2018, 2020-2026 OCEAN collaboration
 !
 ! This file is part of the OCEAN project and distributed under the terms 
 ! of the University of Illinois/NCSA Open Source License. See the file 
 ! `License' in the root directory of the present distribution.
 !
 !> @brief This module contains the necessary pieces for carrying out GMRES
+!
+! The flag gmres_arnoldi (Set in OCEAN_system) determines the switch between
+! the legacy method and a fully orthogoanlized Arnoldi algorithm. In exact 
+! arithmetic these two produce the same results. In finite precision, the
+! legacy could stagnate while the gmres_arnoldi path would progress. The cost
+! is that the legacy is much faster and therefore the default.
 module OCEAN_gmres
   use OCEAN_psi, only : ocean_vector
   use AI_kinds
@@ -17,6 +23,12 @@ module OCEAN_gmres
 
   type(ocean_vector), allocatable, target :: au_matrix(:)
   type(ocean_vector), allocatable, target :: u_matrix(:)
+  type(ocean_vector), allocatable, target :: v_matrix(:)
+  complex(DP), allocatable, target :: h_matrix(:,:), qr_rhs(:), qr_s(:), qr_coeff(:), prev_coeff(:)
+  real(DP), allocatable :: qr_c(:), arnoldi_buffer(:)
+  real(DP), parameter :: arnoldi_tol = 100.0_dp * epsilon(1.0_dp)
+  integer :: recycle_count
+  logical :: arnoldi_breakdown
 
   real(DP) :: gmres_resolution !> imaginary part added to inverse, stored in Ha
   real(DP) :: gmres_preconditioner !> width of preconditioner 
@@ -62,6 +74,13 @@ module OCEAN_gmres
         if( ierr .ne. 0 ) return
       enddo
       deallocate( u_matrix )
+    endif
+    if( allocated( v_matrix ) ) then
+      do i = 1, size( v_matrix )
+        call OCEAN_psi_kill( v_matrix( i ), ierr )
+        if( ierr .ne. 0 ) return
+      enddo
+      deallocate( v_matrix, h_matrix, qr_rhs, qr_s, qr_c, qr_coeff, prev_coeff, arnoldi_buffer )
     endif
 
   end subroutine OCEAN_gmres_clean
@@ -191,9 +210,14 @@ module OCEAN_gmres
       if( ierr .ne. 0 ) return
     enddo
 
-    if( myid .eq. root ) then
-      i = OCEAN_psi_size_min(au_matrix(1))
-      write(6,'(A,F8.2,A)') 'GMRES requires additional: ', gmres_depth*dble(i)*(32.0_dp/1048576.0_dp), ' MB'
+    if( sys%cur_run%gmres_arnoldi ) then
+      call initialize_arnoldi_storage( ierr )
+      if( ierr .ne. 0 ) return
+    else
+      if( myid .eq. root ) then
+        i = OCEAN_psi_size_min(au_matrix(1))
+        write(6,'(A,F8.2,A)') 'GMRES requires additional: ', gmres_depth*dble(i)*(32.0_dp/1048576.0_dp), ' MB'
+      endif
     endif
 
     if( myid .eq. root ) then
@@ -203,6 +227,31 @@ module OCEAN_gmres
     endif
 
   end subroutine initialize_gmres_storage
+
+  ! Allocate Arnoldi workspaces on first use and retain them until cleanup.
+  subroutine initialize_arnoldi_storage( ierr )
+    use OCEAN_psi, only : OCEAN_psi_new, OCEAN_psi_size_min
+    use OCEAN_mpi, only : myid, root
+    integer, intent( inout ) :: ierr
+    integer :: i
+    !
+    if( allocated( v_matrix ) ) return
+
+    allocate( v_matrix( gmres_depth + 1 ), h_matrix( gmres_depth + 1, gmres_depth ) )
+    allocate( qr_rhs( gmres_depth + 1 ), qr_s( gmres_depth ), qr_c( gmres_depth ), &
+              qr_coeff( gmres_depth ), prev_coeff( gmres_depth ) )
+    allocate( arnoldi_buffer( 2*gmres_depth + 1 ) )
+    do i = 1, gmres_depth + 1
+      call OCEAN_psi_new( v_matrix( i ), ierr )
+      if( ierr .ne. 0 ) return
+    enddo
+
+    if( myid .eq. root ) then
+      i = OCEAN_psi_size_min(au_matrix(1))
+      write(6,'(A,F8.2,A)') 'GMRES requires additional: ', &
+            (3*gmres_depth+1)*dble(i)*(16.0_dp/1048576.0_dp), ' MB'
+    endif
+  end subroutine initialize_arnoldi_storage
 
   subroutine make_recycle( current_iter, ener, prev_ener, psi_tmp, sys, ierr )
     use OCEAN_psi, only : OCEAN_psi_axpy, OCEAN_psi_min_set_prec, OCEAN_psi_3element_mult
@@ -220,7 +269,7 @@ module OCEAN_gmres
 
     delta = ener - prev_ener
 
-    if( sys%bwflg ) then
+    if( sys%cur_run%bwflg ) then
       do i = 1, current_iter
         call OCEAN_energies_sfact_copy( sys, au_matrix(i), psi_tmp, ierr )
         if( ierr .ne. 0 ) return
@@ -238,6 +287,186 @@ module OCEAN_gmres
 
   end subroutine make_recycle
 
+  ! Reduce all projection coefficients together, optionally including the incoming squared norm.
+  subroutine arnoldi_dots( keep, nvec, psi, ierr, norm )
+    use OCEAN_psi, only : OCEAN_psi_dot, OCEAN_psi_nrm
+    use OCEAN_mpi
+    integer, intent( in ) :: keep, nvec
+    type(ocean_vector), intent( inout ) :: psi
+    integer, intent( inout ) :: ierr
+    real(DP), intent( out ), optional :: norm
+    integer :: i, k, count, my_comm
+    !
+    do i = 1, keep
+      call OCEAN_psi_dot( au_matrix(i), psi, arnoldi_buffer(2*i-1), ierr, &
+                          ival=arnoldi_buffer(2*i), defer=.true. )
+      if( ierr .ne. 0 ) return
+    enddo
+    do i = 1, nvec
+      k = keep + i
+      call OCEAN_psi_dot( v_matrix(i), psi, arnoldi_buffer(2*k-1), ierr, &
+                          ival=arnoldi_buffer(2*k), defer=.true. )
+      if( ierr .ne. 0 ) return
+    enddo
+    count = 2*(keep+nvec)
+    if( present( norm ) ) then
+      count = count + 1
+      call OCEAN_psi_nrm( arnoldi_buffer(count), psi, ierr, defer=.true. )
+      if( ierr .ne. 0 ) return
+    endif
+    if( count .eq. 0 ) return
+    my_comm = psi%core_comm
+    if( psi%val_comm .ne. -1 ) my_comm = psi%val_comm
+    call MPI_ALLREDUCE( MPI_IN_PLACE, arnoldi_buffer, count, MPI_DOUBLE_PRECISION, MPI_SUM, my_comm, ierr )
+    if( ierr .ne. 0 ) return
+    if( present( norm ) ) norm = arnoldi_buffer(count)
+  end subroutine arnoldi_dots
+
+  ! Start an Arnoldi cycle from r = -g, retaining the projected recycle space.
+  subroutine start_arnoldi( keep, psi_g, gval, ierr )
+    use OCEAN_psi, only : OCEAN_psi_copy_min, OCEAN_psi_scal
+    integer, intent( in ) :: keep
+    type(ocean_vector), intent( inout ) :: psi_g
+    integer, intent( inout ) :: ierr
+    real(DP), intent( in ) :: gval
+    !
+    recycle_count = keep
+    arnoldi_breakdown = .false.
+    h_matrix = 0.0_dp
+    qr_rhs = 0.0_dp
+    prev_coeff = 0.0_dp
+    qr_rhs(1) = sqrt(gval)
+    call OCEAN_psi_copy_min( v_matrix(1), psi_g, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_scal( -1.0_dp/sqrt(gval), v_matrix(1), ierr )
+  end subroutine start_arnoldi
+
+  ! QR the shifted images and transform their preimages to maintain A U = C.
+  subroutine recycle_arnoldi( keep, psi_g, psi_x, psi_ax, ierr )
+    use OCEAN_psi, only : OCEAN_psi_nrm, OCEAN_psi_axpy, OCEAN_psi_copy_min, OCEAN_psi_scal
+    use OCEAN_timekeeper, only : tk_inv, OCEAN_tk_start, OCEAN_tk_stop
+    integer, intent( inout ) :: keep
+    type(ocean_vector), intent( inout ) :: psi_g, psi_x, psi_ax
+    integer, intent( inout ) :: ierr
+    integer :: i, j, k, pass
+    real(DP) :: before, after, rval, ival
+    !
+    call OCEAN_tk_start( tk_inv )
+    k = 0
+    do j = 1, keep
+      do pass = 1, 2
+        if( pass .eq. 1 ) then
+          call arnoldi_dots( k, 0, au_matrix(j), ierr, before )
+        else
+          call arnoldi_dots( k, 0, au_matrix(j), ierr )
+        endif
+        if( ierr .ne. 0 ) return
+        do i = 1, k
+          rval = arnoldi_buffer(2*i-1)
+          ival = arnoldi_buffer(2*i)
+          call OCEAN_psi_axpy( -rval, au_matrix(i), au_matrix(j), ierr, -ival )
+          if( ierr .ne. 0 ) return
+          call OCEAN_psi_axpy( -rval, u_matrix(i), u_matrix(j), ierr, -ival )
+          if( ierr .ne. 0 ) return
+        enddo
+      enddo
+      call OCEAN_psi_nrm( after, au_matrix(j), ierr )
+      if( ierr .ne. 0 ) return
+      if( after .le. arnoldi_tol**2 * before ) cycle
+      k = k + 1
+      if( k .ne. j ) then
+        call OCEAN_psi_copy_min( au_matrix(k), au_matrix(j), ierr )
+        if( ierr .ne. 0 ) return
+        call OCEAN_psi_copy_min( u_matrix(k), u_matrix(j), ierr )
+        if( ierr .ne. 0 ) return
+      endif
+      call OCEAN_psi_scal( 1.0_dp/sqrt(after), au_matrix(k), ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_scal( 1.0_dp/sqrt(after), u_matrix(k), ierr )
+      if( ierr .ne. 0 ) return
+    enddo
+    keep = k
+    do pass = 1, 2
+      call arnoldi_dots( keep, 0, psi_g, ierr )
+      if( ierr .ne. 0 ) return
+      do i = 1, keep
+        rval = arnoldi_buffer(2*i-1)
+        ival = arnoldi_buffer(2*i)
+        call OCEAN_psi_axpy( -rval, u_matrix(i), psi_x, ierr, -ival )
+        if( ierr .ne. 0 ) return
+        call OCEAN_psi_axpy( -rval, au_matrix(i), psi_ax, ierr, -ival )
+        if( ierr .ne. 0 ) return
+        call OCEAN_psi_axpy( -rval, au_matrix(i), psi_g, ierr, -ival )
+        if( ierr .ne. 0 ) return
+      enddo
+    enddo
+    call OCEAN_tk_stop( tk_inv )
+  end subroutine recycle_arnoldi
+
+  ! Extend the projected Arnoldi relation, preserving each stored A*z image.
+  subroutine extend_arnoldi( current_iter, ierr )
+    use OCEAN_psi, only : OCEAN_psi_nrm, OCEAN_psi_axpy, OCEAN_psi_copy_min, OCEAN_psi_scal
+    integer, intent( in ) :: current_iter
+    integer, intent( inout ) :: ierr
+    integer :: i, j, k, pass
+    real(DP) :: before, after, rval, ival
+    logical :: reconstruct
+    !
+    j = current_iter - recycle_count
+    ! Compare a copy and j AXPYs with the two passes over the recycle space.
+    reconstruct = j + 1 .lt. 2*recycle_count
+    call OCEAN_psi_copy_min( v_matrix(j+1), au_matrix(current_iter), ierr )
+    if( ierr .ne. 0 ) return
+    do pass = 1, 2
+      if( pass .eq. 1 ) then
+        call arnoldi_dots( recycle_count, j, v_matrix(j+1), ierr, before )
+      else
+        call arnoldi_dots( recycle_count, j, v_matrix(j+1), ierr )
+      endif
+      if( ierr .ne. 0 ) return
+      do i = 1, recycle_count
+        rval = arnoldi_buffer(2*i-1)
+        ival = arnoldi_buffer(2*i)
+        call OCEAN_psi_axpy( -rval, au_matrix(i), v_matrix(j+1), ierr, -ival )
+        if( ierr .ne. 0 ) return
+        if( .not. reconstruct ) then
+          call OCEAN_psi_axpy( -rval, au_matrix(i), au_matrix(current_iter), ierr, -ival )
+          if( ierr .ne. 0 ) return
+        endif
+        call OCEAN_psi_axpy( -rval, u_matrix(i), u_matrix(current_iter), ierr, -ival )
+        if( ierr .ne. 0 ) return
+      enddo
+      do i = 1, j
+        k = recycle_count + i
+        rval = arnoldi_buffer(2*k-1)
+        ival = arnoldi_buffer(2*k)
+        h_matrix(i,j) = h_matrix(i,j) + cmplx(rval,ival,DP)
+        call OCEAN_psi_axpy( -rval, v_matrix(i), v_matrix(j+1), ierr, -ival )
+        if( ierr .ne. 0 ) return
+      enddo
+    enddo
+    call OCEAN_psi_nrm( after, v_matrix(j+1), ierr )
+    if( ierr .ne. 0 ) return
+    if( reconstruct ) then
+      ! au = V*h + the unnormalized next Arnoldi vector, before QR rotations.
+      call OCEAN_psi_copy_min( au_matrix(current_iter), v_matrix(j+1), ierr )
+      if( ierr .ne. 0 ) return
+      do i = 1, j
+        rval = real(h_matrix(i,j),DP)
+        ival = aimag(h_matrix(i,j))
+        call OCEAN_psi_axpy( rval, v_matrix(i), au_matrix(current_iter), ierr, ival )
+        if( ierr .ne. 0 ) return
+      enddo
+    endif
+    arnoldi_breakdown = after .le. arnoldi_tol**2 * before
+    if( arnoldi_breakdown ) then
+      h_matrix(j+1,j) = 0.0_dp
+    else
+      h_matrix(j+1,j) = sqrt(after)
+      call OCEAN_psi_scal( 1.0_dp/sqrt(after), v_matrix(j+1), ierr )
+    endif
+  end subroutine extend_arnoldi
+
   subroutine update_gmres( current_iter, psi_g, psi_x, psi_ax, ierr)
     use OCEAN_mpi
     use OCEAN_psi, only : ocean_vector, OCEAN_psi_dot, OCEAN_psi_axpy, OCEAN_psi_nrm
@@ -250,6 +479,8 @@ module OCEAN_gmres
     complex(DP), allocatable :: c_temp( : ), coeff( : )
     real(DP), allocatable, dimension(:) :: re_coeff_vec, im_coeff_vec, re_rvec, im_rvec 
     integer, allocatable :: ipiv( : )
+    integer :: j
+    logical :: scale_matrix
     real(DP) :: tmp_r, tmp_i
     integer :: local_gmres_size, info, iter, c_size, iter_start
     !
@@ -306,6 +537,25 @@ module OCEAN_gmres
       allocate( c_temp( c_size ), ipiv( current_iter ) )
       c_temp( : ) = c_matrix( 1 : c_size )
 
+      ! Equilibrate the temporary Gram system using the image norms.
+      scale_matrix = .true.
+      do iter = 1, current_iter
+        if( real(c_matrix(iter*(iter+1)/2),DP) .le. 0.0_DP ) scale_matrix = .false.
+      enddo
+      re_coeff_vec(:) = 1.0_DP
+      if( scale_matrix ) then
+        do iter = 1, current_iter
+          re_coeff_vec(iter) = 1.0_DP/sqrt(real(c_matrix(iter*(iter+1)/2),DP))
+        enddo
+        iter_start = 0
+        do j = 1, current_iter
+          do iter = 1, j
+            c_temp(iter+iter_start) = (c_temp(iter+iter_start)*re_coeff_vec(iter))*re_coeff_vec(j)
+          enddo
+          iter_start = iter_start + j
+        enddo
+      endif
+
       call zhptrf( 'U', current_iter, c_temp, ipiv, info )
 
       ! Want to test after waitall so that all procs are on the same page if we abort
@@ -313,11 +563,12 @@ module OCEAN_gmres
         ierr = info
       else
         do iter = 1, current_iter
-          coeff( iter ) = -cmplx( re_rvec( iter ), im_rvec( iter ), DP )
+          coeff( iter ) = -cmplx( re_rvec( iter ), im_rvec( iter ), DP )*re_coeff_vec(iter)
         enddo
 
 
         call zhptrs( 'U', current_iter, 1, c_temp, ipiv, coeff, current_iter, info )
+        if( info .eq. 0 ) coeff(:) = coeff(:)*re_coeff_vec(:)
       endif
       deallocate( c_temp, ipiv )
 
@@ -332,7 +583,8 @@ module OCEAN_gmres
     if( ierr .ne. 0 ) return
 
     ! update ax and x
-    do iter = 1, current_iter
+    iter_start = 1
+    do iter = iter_start, current_iter
       tmp_r = real( coeff( iter ), DP )
       tmp_i = aimag( coeff( iter ) )
       call OCEAN_psi_axpy( tmp_r, u_matrix( iter ), psi_x, ierr, tmp_i )
@@ -342,6 +594,84 @@ module OCEAN_gmres
     call OCEAN_tk_stop( tk_inv )
     !
   end subroutine update_gmres
+
+  ! Update the Arnoldi least-squares solution using incremental QR.
+  subroutine update_gmres_arnoldi( current_iter, psi_g, psi_x, psi_ax, ierr)
+    use OCEAN_mpi
+    use OCEAN_psi, only : ocean_vector, OCEAN_psi_dot, OCEAN_psi_axpy, OCEAN_psi_nrm
+    use OCEAN_timekeeper, only : tk_inv, OCEAN_tk_start, OCEAN_tk_stop
+    !
+    integer, intent( in ) :: current_iter
+    type( ocean_vector ), intent(inout ) :: psi_g, psi_x, psi_ax
+    integer, intent( inout ) :: ierr
+    !
+    complex(DP), pointer :: coeff(:)
+    complex(DP) :: tmp, rotated
+    real(DP) :: column_norm
+    integer :: j
+    real(DP) :: tmp_r, tmp_i
+    integer :: info, iter, iter_start
+    !
+    call OCEAN_tk_start( tk_inv )
+    !
+    call extend_arnoldi( current_iter, ierr )
+    if( ierr .ne. 0 ) return
+    j = current_iter - recycle_count
+    coeff => qr_coeff
+    info = 0
+    if( myid .eq. root ) then
+      column_norm = sqrt(sum(abs(h_matrix(1:j+1,j))**2))
+      do iter = 1, j - 1
+        tmp = qr_c(iter)*h_matrix(iter,j) + qr_s(iter)*h_matrix(iter+1,j)
+        h_matrix(iter+1,j) = -conjg(qr_s(iter))*h_matrix(iter,j) + qr_c(iter)*h_matrix(iter+1,j)
+        h_matrix(iter,j) = tmp
+      enddo
+      call zlartg( h_matrix(j,j), h_matrix(j+1,j), qr_c(j), qr_s(j), rotated )
+      h_matrix(j,j) = rotated
+      h_matrix(j+1,j) = 0.0_dp
+      tmp = qr_c(j)*qr_rhs(j) + qr_s(j)*qr_rhs(j+1)
+      qr_rhs(j+1) = -conjg(qr_s(j))*qr_rhs(j) + qr_c(j)*qr_rhs(j+1)
+      qr_rhs(j) = tmp
+      coeff(1:current_iter) = 0.0_dp
+      if( abs(h_matrix(j,j)) .le. arnoldi_tol * column_norm ) then
+        arnoldi_breakdown = .true.
+      else
+        coeff(recycle_count+1:current_iter) = qr_rhs(1:j)
+        call ztrtrs( 'U', 'N', 'N', j, 1, h_matrix, gmres_depth+1, &
+                     coeff(recycle_count+1), gmres_depth, info )
+        do iter = 1, j
+          tmp = coeff(recycle_count+iter)
+          coeff(recycle_count+iter) = tmp - prev_coeff(iter)
+          prev_coeff(iter) = tmp
+        enddo
+      endif
+    endif
+
+    call MPI_BCAST( info, 1, MPI_INTEGER, root, comm, ierr )
+    if( ierr .ne. 0 ) return
+    ierr = info
+    if( ierr .ne. 0 ) return
+
+    call MPI_BCAST( arnoldi_breakdown, 1, MPI_LOGICAL, root, comm, ierr )
+    if( ierr .ne. 0 ) return
+    call MPI_BCAST( coeff, current_iter, MPI_DOUBLE_COMPLEX, root, comm, ierr )
+    if( ierr .ne. 0 ) return
+
+    ! update ax and x
+    iter_start = 1
+    iter_start = recycle_count + 1
+    do iter = iter_start, current_iter
+      tmp_r = real( coeff( iter ), DP )
+      tmp_i = aimag( coeff( iter ) )
+      call OCEAN_psi_axpy( tmp_r, u_matrix( iter ), psi_x, ierr, tmp_i )
+      if( ierr .ne. 0 ) return
+      call OCEAN_psi_axpy( tmp_r, au_matrix( iter ), psi_ax, ierr, tmp_i )
+      if( ierr .ne. 0 ) return
+    enddo
+
+    call OCEAN_tk_stop( tk_inv )
+    !
+  end subroutine update_gmres_arnoldi
 
   subroutine eigensystem_gmres( iter, keep, ierr )
 !    use ocean_mpi, only : root, myid, MPI_REQUEST_NULL,  MPI_STATUSES_IGNORE
@@ -518,17 +848,19 @@ module OCEAN_gmres
     type( ocean_vector ), intent( inout ) :: hay_vec
     integer, intent( inout ) :: ierr
     !
-    type( ocean_vector ) :: psi_x, psi_ax, hpsi1, psi_g, psi_pcdiv, psi_tmp
-    type( ocean_vector), pointer :: psi_pg, psi_apg
+    type( ocean_vector ) :: psi_x, psi_ax, hpsi1, psi_pcdiv, psi_tmp
+    type( ocean_vector ), target :: psi_g
+    type( ocean_vector), pointer :: psi_pg, psi_apg, psi_basis
     !
     real(DP) :: ener, rval, ival, gval, rel_error, fact, prev_energy
     real(dp), parameter :: one = 1.0_dp
     real(dp), parameter :: zero = 0.0_dp
     integer :: iter, step_iter, complete_iter, requests( 2 ), ierr_, prev_iter, global_iter, keep, i
     logical :: loud = .true.
+    logical :: converged, restart, verified
     character( len=25 ) :: abs_filename
     integer, parameter :: abs_fh = 76
-    type( ocean_vector ) :: hay_psi_x, psi_rhs
+    type( ocean_vector ) :: psi_rhs
 
     integer :: nhflag(6)
     nhflag(:) = sys%nhflag
@@ -539,6 +871,11 @@ module OCEAN_gmres
       write(6,*) 'BACKF not implemented for GMRES (try Haydock)'
       ierr = 9963
       return
+    endif
+
+    if( sys%cur_run%gmres_arnoldi ) then
+      call initialize_arnoldi_storage( ierr )
+      if( ierr .ne. 0 ) return
     endif
 
     if( sys%cur_run%have_val ) then
@@ -579,8 +916,6 @@ module OCEAN_gmres
     call OCEAN_psi_new( psi_pcdiv, ierr )
     if( ierr .ne. 0 ) return
     !
-    call OCEAN_psi_new( hay_psi_x, ierr )
-    if( ierr .ne. 0 ) return
     call OCEAN_psi_new( psi_rhs, ierr )
     if( ierr .ne. 0 ) return
     call OCEAN_energies_sfact_copy( sys, hay_vec, psi_rhs, ierr )
@@ -633,7 +968,7 @@ module OCEAN_gmres
           if( myid .eq. root ) write(6,*) 'OCEAN_psi_min_set_prec failed'
           return
         endif
-        if( sys%bwflg ) then
+        if( sys%cur_run%bwflg ) then
           call OCEAN_energies_allow( sys, psi_pcdiv, ierr, sfact=.true. )
           if( ierr .ne. 0 ) return
         endif
@@ -659,6 +994,19 @@ module OCEAN_gmres
                   gval, gmres_convergence, ener, (1.0_dp - rval), -ival
           endif
         endif
+        if( .not. loud ) then
+          call OCEAN_psi_nrm( gval, psi_g, ierr )
+          if( ierr .ne. 0 ) return
+        endif
+        if( sys%cur_run%gmres_arnoldi ) then
+          call check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                 .true., .false., gval, rval, ival, converged, restart, ierr )
+        else
+          call check_initial_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                 .true., gval, rval, ival, converged, ierr )
+        endif
+        if( ierr .ne. 0 ) return
+        if( converged ) goto 200
       else
         ! recycle au_matrix
         if( myid .eq. root ) write( 6, * ) 'recycle: ', prev_iter, & 
@@ -670,11 +1018,23 @@ module OCEAN_gmres
 
         call set_initial_vector( sys, step_iter, psi_x, psi_g, psi_ax, psi_rhs, psi_tmp, ierr, nhflag)
         if( ierr .ne. 0 ) return
-        do iter = 1, prev_iter
-          call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
+        if( sys%cur_run%gmres_arnoldi ) then
+          call recycle_arnoldi( prev_iter, psi_g, psi_x, psi_ax, ierr )
           if( ierr .ne. 0 ) return
-          call OCEAN_psi_axmz( psi_ax, psi_g, psi_rhs, ierr )
-        enddo
+          iter = prev_iter + 1
+        else
+          call OCEAN_psi_nrm( gval, psi_g, ierr )
+          if( ierr .ne. 0 ) return
+          call check_initial_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                 .true., gval, rval, ival, converged, ierr )
+          if( ierr .ne. 0 ) return
+          if( converged ) goto 200
+          do iter = 1, prev_iter
+            call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
+            if( ierr .ne. 0 ) return
+            call OCEAN_psi_axmz( psi_ax, psi_g, psi_rhs, ierr )
+          enddo
+        endif
           !
 
         call OCEAN_psi_nrm( gval, psi_g, ierr )  ! non-blocking wouldn't do any good
@@ -695,15 +1055,31 @@ module OCEAN_gmres
           endif
         endif
 !          if( myid.eq.root) write(*,*) 'conv check'
-        if( gval .lt. gmres_convergence ) then
-          call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+        if( sys%cur_run%gmres_arnoldi ) then
+          call check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                 .true., .false., gval, rval, ival, converged, restart, ierr )
           if( ierr .ne. 0 ) return
-          call MPI_WAITALL( 2, requests, MPI_STATUSES_IGNORE, ierr )
-          if( ierr .ne. 0 ) return
-          rel_error = -gval / ival
+          if( converged ) goto 200
+          if( restart ) prev_iter = 0
+        else
+          if( gval .lt. gmres_convergence ) then
+            call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+            if( ierr .ne. 0 ) return
+            call MPI_WAITALL( 2, requests, MPI_STATUSES_IGNORE, ierr )
+            if( ierr .ne. 0 ) return
+            rel_error = 0.0_dp
+            if( gval .ne. 0.0_dp ) rel_error = -gval / ival
 
-          if( rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) then
-            goto 200 ! if convergered goto 200
+            if( rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) then
+              call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
+              if( ierr .ne. 0 ) return
+              rel_error = 0.0_dp
+              if( gval .ne. 0.0_dp ) rel_error = -gval / ival
+              if( gval .lt. gmres_convergence .and. &
+                  (rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) ) then
+                goto 200 ! if convergered goto 200
+              endif
+            endif
           endif
         endif
         if( abs( prev_energy - ener ) > gmres_preconditioner/4.0_DP ) then
@@ -715,7 +1091,7 @@ module OCEAN_gmres
             if( myid .eq. root ) write(6,*) 'OCEAN_psi_min_set_prec failed'
             return
           endif
-          if( sys%bwflg ) then
+          if( sys%cur_run%bwflg ) then
             call OCEAN_energies_allow( sys, psi_pcdiv, ierr, sfact=.true. )
             if( ierr .ne. 0 ) return
           endif
@@ -724,17 +1100,26 @@ module OCEAN_gmres
       endif
 
       do ! outerloop for restarted GMRES
+        if( sys%cur_run%gmres_arnoldi ) then
+          call start_arnoldi( prev_iter, psi_g, gval, ierr )
+          if( ierr .ne. 0 ) return
+        endif
       
         do iter = prev_iter+1, gmres_depth
           complete_iter = complete_iter + 1
           global_iter = global_iter + 1
           psi_pg => u_matrix( iter )
           psi_apg => au_matrix( iter )
-          ! pg = g * pcdiv
-          if( do_precondition) then
-            call OCEAN_psi_3element_mult( psi_pg, psi_g, psi_pcdiv, ierr )
+          if( sys%cur_run%gmres_arnoldi ) then
+            psi_basis => v_matrix( iter - recycle_count )
           else
-            call OCEAN_psi_copy_min( psi_pg, psi_g, ierr )
+            psi_basis => psi_g
+          endif
+          ! Apply the right preconditioner to the next search vector
+          if( do_precondition) then
+            call OCEAN_psi_3element_mult( psi_pg, psi_basis, psi_pcdiv, ierr )
+          else
+            call OCEAN_psi_copy_min( psi_pg, psi_basis, ierr )
           endif
           if( ierr .ne. 0 ) then
             if( myid .eq. root ) write(6,*) 'do_precondition failed'
@@ -747,7 +1132,7 @@ module OCEAN_gmres
           ! apg = H . pg
           !TODO
           ! if bwflg then apg = H . S . pg
-          if( sys%bwflg ) then
+          if( sys%cur_run%bwflg ) then
             !TODO
             call OCEAN_energies_sfact_copy( sys, psi_pg, psi_tmp, ierr )
             if( ierr .ne. 0 ) return
@@ -763,7 +1148,7 @@ module OCEAN_gmres
 
           !TODO:
           !if bwflg then apg = S. apg          
-          if( sys%bwflg ) then
+          if( sys%cur_run%bwflg ) then
             call OCEAN_energies_allow( sys, psi_apg, ierr, sfact=.true. )
             if( ierr .ne. 0 ) return
           endif
@@ -774,57 +1159,43 @@ module OCEAN_gmres
           if( ierr .ne. 0 ) return
 
 
-          call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
+          if( sys%cur_run%gmres_arnoldi ) then
+            call update_gmres_arnoldi( iter, psi_g, psi_x, psi_ax, ierr )
+          else
+            call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
+          endif
+          if( ierr .ne. 0 ) return
 
-          if( iter .eq. gmres_depth ) then
-            call OCEAN_psi_min2full( psi_x, ierr )
+          verified = iter .eq. gmres_depth
+          if( sys%cur_run%gmres_arnoldi ) verified = verified .or. arnoldi_breakdown
+          if( verified ) then
+            call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
             if( ierr .ne. 0 ) return
-            ! newi2loop section here
+            if( iter .eq. gmres_depth ) then
+              if( ener .ne. prev_energy ) then
+                call OCEAN_psi_min_set_prec( ener, gmres_preconditioner, hpsi1, psi_pcdiv, ierr )
+                if( ierr .ne. 0 ) then
+                  if( myid .eq. root ) write(6,*) 'OCEAN_psi_min_set_prec failed'
+                  return
+                endif
+                if( sys%cur_run%bwflg ) then
+                  call OCEAN_energies_allow( sys, psi_pcdiv, ierr, sfact=.true. )
+                  if( ierr .ne. 0 ) return
+                endif
+                prev_energy = ener
+              endif
 
-            ! if bwflg then ax = H . S . x
-            if( sys%cur_run%bwflg ) then
-              call OCEAN_energies_sfact_copy( sys, psi_x, psi_tmp, ierr )
-              if( ierr .ne. 0 ) return
-              call OCEAN_xact( sys, sys%interactionScale, psi_tmp, psi_ax, ierr )
-              if( ierr .ne. 0 ) return
-            else
-              call OCEAN_xact( sys, sys%interactionScale, psi_x, psi_ax, ierr )
-              if( ierr .ne. 0 ) return
+              prev_iter = 0
             endif
-
-            ! psi_ax = (ener + iG ) * psi_x - psi_ax
-            call OCEAN_psi_axmy( psi_x, psi_ax, ierr, ener, gmres_resolution )
+          else
+            ! get new g
+            ! g = ax - b   !!! y = x - z
+            call OCEAN_psi_axmz( psi_ax, psi_g, psi_rhs, ierr )
             if( ierr .ne. 0 ) return
-            !
-            ! if bwflg then ax = S . ax          
-            if( sys%bwflg ) then
-              call OCEAN_energies_allow( sys, psi_ax, ierr, sfact=.true. )
-              if( ierr .ne. 0 ) return
-            endif
-            !
-            if( ener .ne. prev_energy ) then
-              call OCEAN_psi_min_set_prec( ener, gmres_preconditioner, hpsi1, psi_pcdiv, ierr )
-              if( ierr .ne. 0 ) then
-                if( myid .eq. root ) write(6,*) 'OCEAN_psi_min_set_prec failed'
-                return
-              endif
-              if( sys%bwflg ) then
-                call OCEAN_energies_allow( sys, psi_pcdiv, ierr, sfact=.true. )
-                if( ierr .ne. 0 ) return
-              endif
-              prev_energy = ener
-            endif
-
-            prev_iter = 0
+            call OCEAN_psi_nrm( gval, psi_g, ierr )
+            if( ierr .ne. 0 ) return
           endif
 
-          ! get new g
-          ! g = ax - b   !!! y = x - z
-          call OCEAN_psi_axmz( psi_ax, psi_g, psi_rhs, ierr )
-          !
-
-          call OCEAN_psi_nrm( gval, psi_g, ierr )  ! non-blocking wouldn't do any good
-          if( ierr .ne. 0 ) return
           if( loud ) then
             call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
             if( ierr .ne. 0 ) return
@@ -840,16 +1211,46 @@ module OCEAN_gmres
             endif
           endif
 
-          if( gval .lt. gmres_convergence ) then 
-
-            call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+          if( sys%cur_run%gmres_arnoldi ) then
+            call check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                   .true., iter .eq. gmres_depth .or. arnoldi_breakdown, &
+                   gval, rval, ival, converged, restart, ierr )
             if( ierr .ne. 0 ) return
-            rel_error = -gval / ival
-
-            if( rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) then
+            if( converged ) then
               prev_iter = iter
-              if( iter .eq. gmres_depth ) prev_iter = 0 
-              goto 200 ! if convergered goto 200
+              if( iter .eq. gmres_depth ) prev_iter = 0
+              goto 200
+            endif
+            if( arnoldi_breakdown ) then
+              if( myid .eq. root ) write(6,*) 'GMRES: Arnoldi breakdown'
+              ierr = 50
+              return
+            endif
+            if( restart ) then
+              prev_iter = 0
+              exit
+            endif
+          else
+            if( gval .lt. gmres_convergence ) then
+
+              call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+              if( ierr .ne. 0 ) return
+              rel_error = 0.0_dp
+              if( gval .ne. 0.0_dp ) rel_error = -gval / ival
+
+              if( iter .ne. gmres_depth .and. &
+                  (rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) ) then
+                call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
+                if( ierr .ne. 0 ) return
+                rel_error = 0.0_dp
+                if( gval .ne. 0.0_dp ) rel_error = -gval / ival
+              endif
+              if( gval .lt. gmres_convergence .and. &
+                  (rel_error .lt. 0.001 .or. (gval .lt. gmres_convergence/10.0_dp ) ) ) then
+                prev_iter = iter
+                if( iter .eq. gmres_depth ) prev_iter = 0
+                goto 200 ! if convergered goto 200
+              endif
             endif
           endif
         enddo
@@ -862,18 +1263,11 @@ module OCEAN_gmres
 !      prev_iter = iter
 
       if(myid.eq. root) then
-        rel_error = -gval / ival
+        rel_error = 0.0_dp
+        if( gval .ne. 0.0_dp ) rel_error = -gval / ival
         write( abs_fh, '(1p,4(1e15.8,1x),1i6,1x,i10)' ) ener * Hartree2eV, &
                     (1.0_dp - rval*fact), -ival*fact, rel_error, complete_iter, global_iter
         flush(abs_fh)
-      endif
-
-      ! TODO: make this a separate flag
-      if ( echamp ) then
-
-        rval = 0.0_DP
-        call OCEAN_psi_3element_mult( hay_psi_x, psi_rhs, psi_x, ierr, rval, .true. )
-        if( ierr .ne. 0 ) return
       endif
 
       if( echamp ) then
@@ -883,8 +1277,6 @@ module OCEAN_gmres
       endif
     enddo
 
-    call OCEAN_psi_kill( hay_psi_x, ierr )
-    if( ierr .ne. 0 ) return
     call OCEAN_psi_kill( psi_x, ierr )
        if( ierr .ne. 0 ) return
     call OCEAN_psi_kill( psi_ax, ierr )
@@ -920,7 +1312,8 @@ module OCEAN_gmres
     type( ocean_vector ), intent( inout ) :: hay_vec
     integer, intent( inout ) :: ierr
     !
-    type( ocean_vector ) :: psi_x, psi_ax, hpsi1, psi_g, psi_pcdiv
+    type( ocean_vector ) :: psi_x, psi_ax, hpsi1, psi_pcdiv
+    type( ocean_vector ), target :: psi_g
     !AK-NOTE:
     !! the strategy to output intermediate eigenvalues is:
     !! inefficient route: save as a new ocean_vector after the right combination
@@ -930,15 +1323,16 @@ module OCEAN_gmres
     !for the subsequent gmres of similar eigenvalues -- should provide a shorter
     !gmres time. 
     !! The elements of the BSE hamiltonian applied in OCEAN_gmres_do are: 
-    type( ocean_vector), pointer :: psi_pg, psi_apg
+    type( ocean_vector), pointer :: psi_pg, psi_apg, psi_basis
     !
     real(DP) :: ener, rval, ival, gval, rel_error, fact
     real(dp), parameter :: one = 1.0_dp
     integer :: iter, step_iter, complete_iter, requests( 2 ), ierr_
     logical :: loud = .false.
+    logical :: converged, restart, verified
     character( len=25 ) :: abs_filename
     integer, parameter :: abs_fh = 76
-    type( ocean_vector ) :: hay_psi_x, psi_tmp
+    type( ocean_vector ) :: psi_tmp
     
     integer :: nhflag(6)
     nhflag(:) = sys%nhflag
@@ -951,6 +1345,11 @@ module OCEAN_gmres
       return
     endif
     
+    if( sys%cur_run%gmres_arnoldi ) then
+      call initialize_arnoldi_storage( ierr )
+      if( ierr .ne. 0 ) return
+    endif
+
     if( sys%cur_run%have_val ) then
       fact = hay_vec%kpref * 2.0_dp * sys%celvol
     else
@@ -990,8 +1389,6 @@ module OCEAN_gmres
     call OCEAN_psi_new( psi_pcdiv, ierr )
     if( ierr .ne. 0 ) return
     !
-    call OCEAN_psi_new( hay_psi_x, ierr )
-    if( ierr .ne. 0 ) return
     !!!!
     call OCEAN_psi_new( psi_tmp, ierr )
     if( ierr .ne. 0 ) return
@@ -1060,8 +1457,26 @@ module OCEAN_gmres
       endif
 
 
+      if( .not. loud ) then
+        call OCEAN_psi_nrm( gval, psi_g, ierr )
+        if( ierr .ne. 0 ) return
+      endif
+      if( sys%cur_run%gmres_arnoldi ) then
+        call check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, hay_vec, psi_tmp, &
+               .false., .false., gval, rval, ival, converged, restart, ierr )
+      else
+        call check_initial_convergence( sys, ener, psi_x, psi_ax, psi_g, hay_vec, psi_tmp, &
+               .false., gval, rval, ival, converged, ierr )
+      endif
+      if( ierr .ne. 0 ) return
+      if( converged ) goto 200
+
       ! could have some out maximum here, like size_of_psi / gmres_depth 
       do ! outerloop for restarted GMRES
+        if( sys%cur_run%gmres_arnoldi ) then
+          call start_arnoldi( 0, psi_g, gval, ierr )
+          if( ierr .ne. 0 ) return
+        endif
     ! if(myid .eq. root)  write(6, *) 'write out unmodified hay_vec with itter+200'
     !call write_out_echamp(sys, step_iter+200, hay_vec, ierr)
     !if( ierr .ne. 0 ) return
@@ -1070,11 +1485,16 @@ module OCEAN_gmres
           complete_iter = complete_iter + 1
           psi_pg => u_matrix( iter )
           psi_apg => au_matrix( iter )
-          ! pg = g * pcdiv
-          if( do_precondition) then
-            call OCEAN_psi_3element_mult( psi_pg, psi_g, psi_pcdiv, ierr )
+          if( sys%cur_run%gmres_arnoldi ) then
+            psi_basis => v_matrix( iter )
           else
-            call OCEAN_psi_copy_min( psi_pg, psi_g, ierr )
+            psi_basis => psi_g
+          endif
+          ! Apply the right preconditioner to the next search vector
+          if( do_precondition) then
+            call OCEAN_psi_3element_mult( psi_pg, psi_basis, psi_pcdiv, ierr )
+          else
+            call OCEAN_psi_copy_min( psi_pg, psi_basis, ierr )
           endif
           if( ierr .ne. 0 ) then
             if( myid .eq. root ) write(6,*) 'do_precondition failed'
@@ -1101,29 +1521,26 @@ module OCEAN_gmres
           if( ierr .ne. 0 ) return
 
 
-          call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
-
-
-          if( iter .eq. gmres_depth ) then
-            call OCEAN_psi_min2full( psi_x, ierr )
-            if( ierr .ne. 0 ) return
-            ! newi2loop section here
-            call OCEAN_xact( sys, sys%interactionScale, psi_x, psi_ax, ierr )
-            if( ierr .ne. 0 ) return
-            
-            ! psi_ax = (ener + iG ) * psi_x - psi_ax
-            call OCEAN_psi_axmy( psi_x, psi_ax, ierr, ener, gmres_resolution )
-            if( ierr .ne. 0 ) return
-            !
+          if( sys%cur_run%gmres_arnoldi ) then
+            call update_gmres_arnoldi( iter, psi_g, psi_x, psi_ax, ierr )
+          else
+            call update_gmres( iter, psi_g, psi_x, psi_ax, ierr )
           endif
-
-          ! get new g
-          ! g = ax - b   !!! y = x - z
-          call OCEAN_psi_axmz( psi_ax, psi_g, hay_vec, ierr )
-          !
-
-          call OCEAN_psi_nrm( gval, psi_g, ierr )  ! non-blocking wouldn't do any good
           if( ierr .ne. 0 ) return
+
+          verified = iter .eq. gmres_depth
+          if( sys%cur_run%gmres_arnoldi ) verified = verified .or. arnoldi_breakdown
+          if( verified ) then
+            call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, hay_vec, psi_tmp, gval, ierr )
+            if( ierr .ne. 0 ) return
+          else
+            ! get new g
+            ! g = ax - b   !!! y = x - z
+            call OCEAN_psi_axmz( psi_ax, psi_g, hay_vec, ierr )
+            if( ierr .ne. 0 ) return
+            call OCEAN_psi_nrm( gval, psi_g, ierr )
+            if( ierr .ne. 0 ) return
+          endif
           if( loud ) then
             call OCEAN_psi_dot( hay_vec, psi_x, rval, ierr, ival=ival )
             if( ierr .ne. 0 ) return
@@ -1140,7 +1557,25 @@ module OCEAN_gmres
             endif
           endif
 !          if( myid.eq.root) write(*,*) 'conv check'
-          if( gval .lt. gmres_convergence ) goto 200 ! if convergered goto 200
+          if( sys%cur_run%gmres_arnoldi ) then
+            call check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, hay_vec, psi_tmp, &
+                   .false., iter .eq. gmres_depth .or. arnoldi_breakdown, &
+                   gval, rval, ival, converged, restart, ierr )
+            if( ierr .ne. 0 ) return
+            if( converged ) goto 200
+            if( arnoldi_breakdown ) then
+              if( myid .eq. root ) write(6,*) 'GMRES: Arnoldi breakdown'
+              ierr = 50
+              return
+            endif
+            if( restart ) exit
+          else
+            if( gval .lt. gmres_convergence .and. iter .ne. gmres_depth ) then
+              call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, hay_vec, psi_tmp, gval, ierr )
+              if( ierr .ne. 0 ) return
+            endif
+            if( gval .lt. gmres_convergence ) goto 200 ! if convergered goto 200
+          endif
 !          if(myid.eq.root) write(*,*) 'no conv: ', step_iter
         enddo
 
@@ -1155,31 +1590,13 @@ module OCEAN_gmres
 !      call MPI_WAITALL( 2, requests, MPI_STATUSES_IGNORE, ierr )
 !      if( ierr .ne. 0 ) return
       if(myid.eq. root) then
-        rel_error = -gval / ival
+        rel_error = 0.0_dp
+        if( gval .ne. 0.0_dp ) rel_error = -gval / ival
         write( abs_fh, '(1p,4(1e15.8,1x),1i6)' ) ener * Hartree2eV, & 
                     (1.0_dp - rval*fact), -ival*fact, rel_error, complete_iter
         flush(abs_fh)
       endif
 
-      ! TODO: make this a separate flag
-      if ( echamp ) then
-        ! Move create above
-!        call OCEAN_psi_new( hay_psi_x, ierr, psi_x)
-!        if( ierr .ne. 0 ) return
-    
-        rval = 0.0_DP
-        call OCEAN_psi_3element_mult( hay_psi_x, hay_vec, psi_x, ierr, rval, .true. )
-        if( ierr .ne. 0 ) return
-!        call OCEAN_psi_dot_write(hay_vec,psi_x,hay_psi_x,requests(1),rval,ierr,requests(2),ival)
-!        call MPI_WAITALL( 2, requests, MPI_STATUSES_IGNORE, ierr )
-!        if( ierr .ne. 0 ) return
-
-!JTV
-!        call write_out_energy(sys, step_iter, hay_psi_x, nhflag, ierr)
-!        if( ierr .ne. 0 ) return
-      endif
-
- 
       if( echamp ) then
         
         call write_out_echamp(sys, step_iter, psi_x, ierr)
@@ -1189,8 +1606,6 @@ module OCEAN_gmres
 !enddo 
    ! Create all the psi vectors we need
   
-    call OCEAN_psi_kill( hay_psi_x, ierr )
-    if( ierr .ne. 0 ) return
     call OCEAN_psi_kill( psi_x, ierr )
        if( ierr .ne. 0 ) return
     call OCEAN_psi_kill( psi_ax, ierr )
@@ -1209,15 +1624,119 @@ module OCEAN_gmres
   
   end subroutine OCEAN_gmres_do
 
+  ! Verify a candidate before accepting it, restarting if its residual drifted.
+  subroutine check_arnoldi_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                                      spectral, verified, gval, rval, ival, converged, restart, ierr )
+    use OCEAN_system, only : o_system
+    use OCEAN_psi, only : OCEAN_psi_dot
+    type(o_system), intent( in ) :: sys
+    real(DP), intent( in ) :: ener
+    type(ocean_vector), intent( inout ) :: psi_x, psi_ax, psi_g, psi_rhs, psi_tmp
+    logical, intent( in ) :: spectral, verified
+    real(DP), intent( inout ) :: gval, rval, ival
+    logical, intent( out ) :: converged, restart
+    integer, intent( inout ) :: ierr
+    !
+    converged = .false.
+    restart = .false.
+    if( .not. (gval .lt. gmres_convergence) ) return
+    call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+    if( ierr .ne. 0 ) return
+    if( spectral .and. gval .ge. gmres_convergence/10.0_dp ) then
+      if( .not. (-gval/ival .lt. 0.001_dp) ) return
+    endif
+    if( .not. verified ) then
+      call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
+      if( ierr .ne. 0 ) return
+      restart = .true.
+    endif
+    if( .not. (gval .lt. gmres_convergence) ) return
+    if( spectral .and. gval .ge. gmres_convergence/10.0_dp ) then
+      if( .not. (-gval/ival .lt. 0.001_dp) ) return
+    endif
+    converged = .true.
+  end subroutine check_arnoldi_convergence
+
+  ! Verify an initial candidate before constructing or replaying search directions.
+  subroutine check_initial_convergence( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, &
+                                        spectral, gval, rval, ival, converged, ierr )
+    use OCEAN_system, only : o_system
+    use OCEAN_psi, only : OCEAN_psi_dot
+    type(o_system), intent( in ) :: sys
+    real(DP), intent( in ) :: ener
+    type(ocean_vector), intent( inout ) :: psi_x, psi_ax, psi_g, psi_rhs, psi_tmp
+    logical, intent( in ) :: spectral
+    real(DP), intent( inout ) :: gval, rval, ival
+    logical, intent( out ) :: converged
+    integer, intent( inout ) :: ierr
+    !
+    converged = .false.
+    if( .not. (gval .lt. gmres_convergence) ) return
+    call OCEAN_psi_dot( psi_rhs, psi_x, rval, ierr, ival=ival )
+    if( ierr .ne. 0 ) return
+    if( spectral .and. gval .ge. gmres_convergence/10.0_dp ) then
+      if( ival .eq. 0.0_dp ) return
+      if( .not. (-gval/ival .lt. 0.001_dp) ) return
+    endif
+    call get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
+    if( ierr .ne. 0 ) return
+    if( .not. (gval .lt. gmres_convergence) ) return
+    if( spectral .and. gval .ge. gmres_convergence/10.0_dp ) then
+      if( ival .eq. 0.0_dp ) return
+      if( .not. (-gval/ival .lt. 0.001_dp) ) return
+    endif
+    converged = .true.
+  end subroutine check_initial_convergence
+
+!> @brief Recomputes AX and the residual before testing convergence
+  subroutine get_true_residual( sys, ener, psi_x, psi_ax, psi_g, psi_rhs, psi_tmp, gval, ierr )
+    use OCEAN_psi, only : ocean_vector, OCEAN_psi_min2full, OCEAN_psi_axmy, OCEAN_psi_axmz, OCEAN_psi_nrm
+    use OCEAN_action, only : OCEAN_xact
+    use OCEAN_system, only : o_system
+    use OCEAN_energies, only : OCEAN_energies_sfact_copy, OCEAN_energies_allow
+    !
+    type( o_system ), intent( in ) :: sys
+    real(DP), intent( in ) :: ener
+    type( ocean_vector ), intent( inout ) :: psi_x, psi_ax, psi_g, psi_rhs, psi_tmp
+    real(DP), intent( inout ) :: gval
+    integer, intent( inout ) :: ierr
+    !
+    call OCEAN_psi_min2full( psi_x, ierr )
+    if( ierr .ne. 0 ) return
+
+    ! if bwflg then ax = H . S . x
+    if( sys%cur_run%bwflg ) then
+      call OCEAN_energies_sfact_copy( sys, psi_x, psi_tmp, ierr )
+      if( ierr .ne. 0 ) return
+      call OCEAN_xact( sys, sys%interactionScale, psi_tmp, psi_ax, ierr )
+    else
+      call OCEAN_xact( sys, sys%interactionScale, psi_x, psi_ax, ierr )
+    endif
+    if( ierr .ne. 0 ) return
+
+    ! psi_ax = (ener + iG ) * psi_x - psi_ax
+    call OCEAN_psi_axmy( psi_x, psi_ax, ierr, ener, gmres_resolution )
+    if( ierr .ne. 0 ) return
+    ! if bwflg then ax = S . ax
+    if( sys%cur_run%bwflg ) then
+      call OCEAN_energies_allow( sys, psi_ax, ierr, sfact=.true. )
+      if( ierr .ne. 0 ) return
+    endif
+
+    call OCEAN_psi_axmz( psi_ax, psi_g, psi_rhs, ierr )
+    if( ierr .ne. 0 ) return
+    call OCEAN_psi_nrm( gval, psi_g, ierr )
+    if( ierr .ne. 0 ) return
+
+  end subroutine get_true_residual
+
 !> @brief Initializes X (and hence AX)
   subroutine set_initial_vector( sys, iter, psi_x, psi_g, psi_ax, hay_vec, psi_tmp, ierr, nhflag)
-    use OCEAN_psi, only : ocean_vector, OCEAN_psi_zero_min, OCEAN_psi_axmz, OCEAN_psi_axmy, &
-                          OCEAN_psi_min2full
-    use OCEAN_action, only : OCEAN_xact
+    use OCEAN_psi, only : ocean_vector, OCEAN_psi_zero_min, OCEAN_psi_axmz, OCEAN_psi_axpy
     use OCEAN_system, only : o_system
     use OCEAN_constants, only : eV2Hartree
     use OCEAN_mpi, only : myid, root
-    use OCEAN_energies, only : OCEAN_energies_sfact_copy, OCEAN_energies_allow
+    use OCEAN_energies, only : OCEAN_energies_sfact_copy
     !
     type( o_system ), intent( in ) :: sys
     type( ocean_vector ), intent( inout ) :: hay_vec
@@ -1225,7 +1744,7 @@ module OCEAN_gmres
     type( ocean_vector ), intent( inout ) :: psi_x, psi_g, psi_ax, psi_tmp
     integer, intent( inout ) :: ierr
     !
-    real(DP) :: ener
+    real(DP) :: delta
     character(len=4) :: initial = 'zero'
     integer, intent ( in ) :: nhflag(6)
 
@@ -1245,31 +1764,16 @@ module OCEAN_gmres
     select case ( initial )
 
       case ( 'keep' )
-        ! Keep X, generate psi_ax
-        ! if( myid .eq. root ) write(6,*) '   Re-use previous X'
-        call OCEAN_psi_min2full( psi_x, ierr )
-        if( ierr .ne. 0 ) return
-    
-        ! if bwflg then ax = H . S . x
+        ! Keep X, shift the verified AX from the previous energy
+        delta = ( gmres_energy_list( iter ) - gmres_energy_list( iter -1 ) ) * eV2Hartree
         if( sys%cur_run%bwflg ) then
           call OCEAN_energies_sfact_copy( sys, psi_x, psi_tmp, ierr )
           if( ierr .ne. 0 ) return
-          call OCEAN_xact( sys, sys%interactionScale, psi_tmp, psi_ax, ierr )
-          if( ierr .ne. 0 ) return
+          call OCEAN_psi_axpy( delta, psi_tmp, psi_ax, ierr )
         else
-          call OCEAN_xact( sys, sys%interactionScale, psi_x, psi_ax, ierr )
-          if( ierr .ne. 0 ) return
+          call OCEAN_psi_axpy( delta, psi_x, psi_ax, ierr )
         endif
-
-        ener = gmres_energy_list( iter ) * eV2Hartree
-        call OCEAN_psi_axmy( psi_x, psi_ax, ierr, ener, gmres_resolution )
         if( ierr .ne. 0 ) return
-
-        ! if bwflg then ax = S . ax          
-        if( sys%cur_run%bwflg ) then
-          call OCEAN_energies_allow( sys, psi_ax, ierr, sfact=.true. )
-          if( ierr .ne. 0 ) return
-        endif
 
       case default 
         ! or 'zero'

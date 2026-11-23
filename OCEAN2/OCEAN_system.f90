@@ -117,6 +117,7 @@ module OCEAN_system
     logical          :: backf
     logical          :: bwflg
     logical          :: semiTDA
+    logical          :: gmres_arnoldi
     logical          :: complex_bse
     
     type(o_run), pointer :: prev_run => null()
@@ -914,6 +915,7 @@ module OCEAN_system
       temp_cur_run%aldaf = aldaf
       temp_cur_run%backf = backf
       temp_cur_run%semiTDA = semiTDA
+      temp_cur_run%gmres_arnoldi = .false.
 
 
       temp_cur_run%rixs_energy = rixs_energy
