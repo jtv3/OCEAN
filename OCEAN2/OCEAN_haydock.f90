@@ -1938,7 +1938,7 @@ module OCEAN_haydock
       if( ie .eq. 0 ) then
         istart = -nstep
       else
-        istart = nstep - nratio
+        istart = max( -nstep, nstep - nratio )
         do ii = -nstep, nstep - nratio
           spct_array( ii, 0 ) = spct_array( ii+nratio, 0 )
           spct_array( ii, 1 ) = spct_array( ii+nratio, 1 )

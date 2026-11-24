@@ -1287,6 +1287,8 @@ module OCEAN_gmres
     if( ierr .ne. 0 ) return
     call OCEAN_psi_kill( psi_pcdiv, ierr )
     if( ierr .ne. 0 ) return
+    call OCEAN_psi_kill( psi_rhs, ierr )
+    if( ierr .ne. 0 ) return
 
 
     if( sys%cur_run%bwflg ) then

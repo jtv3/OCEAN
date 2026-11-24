@@ -1216,7 +1216,7 @@ module screen_chi0
 !           call screen_tk_start( "calcSingleChiBuffer Greens" )
 ! !$OMP END SINGLE NOWAIT
 
-!$OMP  PARALLEL DEFAULT( NONE )  &
+!$OMP  PARALLEL DEFAULT( NONE ) NUM_THREADS( 1 ) &
 !$OMP& SHARED ( params, NRchunks, NLchunks, Rpts, Lpts, nbands, NImagEnergies ) &
 !$OMP& SHARED ( chi, spinfac, weightImagEnergies, LWvfn, RWvfn, ReEnergyDenom, ImEnergyDenom ) &
 !$OMP& PRIVATE( jstart, jstop, iks, ib, ibstop, iband, i, j, it, pref2, ii, jj, iwidth ) &
@@ -1238,7 +1238,9 @@ module screen_chi0
           do iks = 1 + (ispin-1)*params%nkpts, ispin*params%nkpts
             do ib = 1, nbands, bandBuf
               ibstop = min( ib+bandBuf-1,nbands )
+!$OMP WORKSHARE
               temp(:,:,:) = 0.0_DP
+!$OMP END WORKSHARE
   
 
 ! Possibly re-write the above without the explicit mem copy, but eh?
@@ -1413,14 +1415,12 @@ module screen_chi0
 !$  nthreads = OMP_GET_MAX_THREADS()
 !$  if( present(isDiagonal) ) write(1000+myid,*) 'OMP: ', nthreads
     if( nthreads .gt. NRchunks * NLchunks .and. nthreads .gt. 1 ) then
-!$    call omp_set_nested( .true. )
       innerthreads = nthreads / ( NRchunks * NLchunks )
       if( innerthreads .lt. 2 ) innerthreads = 2
-      if( mod( innerthreads, 2 ) .eq. 1 ) innerthreads = innerthreads + 1
+      if( mod( innerthreads, 2 ) .eq. 1 .and. innerthreads .lt. nthreads ) innerthreads = innerthreads + 1
       if( innerthreads .gt. 8 ) innerthreads = 8
       outerthreads = nthreads / innerthreads
     else
-!$    call omp_set_nested( .false. )
       outerthreads = nthreads
       innerthreads = 1
     endif
@@ -1517,7 +1517,7 @@ module screen_chi0
 
 
 
-!$OMP DO SCHEDULE( STATIC ) COLLAPSE( 2 )
+!$OMP DO SCHEDULE( STATIC )
           do i = istart, istop
             do it = 1, NImagEnergies
               pref2 =  weightImagEnergies( it )

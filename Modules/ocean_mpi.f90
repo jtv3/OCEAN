@@ -79,6 +79,12 @@ module OCEAN_mpi
 
       end select
     endif
+
+!$  if( thread_result .ne. MPI_THREAD_FUNNELED .and. thread_result .ne. MPI_THREAD_SERIALIZED &
+!$      .and. thread_result .ne. MPI_THREAD_MULTIPLE ) then
+!$    call omp_set_num_threads( 1 )
+!$    if( myid .eq. root ) write(6,*) 'Warning, MPI only supports OMP=SINGLE'
+!$  endif
       
 
     ! Re-arrange to be a circle
